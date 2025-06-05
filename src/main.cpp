@@ -1,13 +1,18 @@
 #include <Arduino.h>
-// SPDX-FileCopyrightText: 2011 Limor Fried/ladyada for Adafruit Industries
-//
-// SPDX-License-Identifier: MIT
+#include <WiFi.h>
 
-// Thermistor Example #3 from the Adafruit Learning System guide on Thermistors 
-// https://learn.adafruit.com/thermistor/overview by Limor Fried, Adafruit Industries
-// MIT License - please keep attribution and consider buying parts from Adafruit
+// ---------------- WiFi and Access Point Settings and Values----------------
+// WiFi SSID and password for connecting to an existing network
+const char* ssid = "TostiReflow";
+const char* password = "LPLTosti";
+// Create a server that listens on port 80
+WiFiServer server(80); 
+// stores the header for the HTTP response
+String header;
 
+// ---------------- Thermistor Settings and Values ----------------
 // which analog pin to connect
+// WARNING: Use ADC1 (GPIO 32 to 39) on ESP32, as ADC2 is used by WiFi and Bluetooth.
 #define THERMISTORPIN 32      
 // resistance at 25 degrees C
 #define THERMISTORNOMINAL 100000      
@@ -22,28 +27,103 @@
 #define SERIESRESISTOR 5450    
 // for ESP32, the ADC max value is 4095 (12-bit resolution)
 #define ADC_MAX_VALUE 4095 
-
-#define TIMEBETWEENSAMPLES 10 // milliseconds between samples
-
-#define REPORTINTERVAL 1000 // milliseconds between reports
-
-int samples[NUMSAMPLES] = {0,0,0,0,0}, average = 0;
-
+// milliseconds between samples
+#define TIMEBETWEENSAMPLES 10 
+// stores the samples
+int samples[NUMSAMPLES], average = 0;
+// current zero index in the samples array
 uint8_t sampleIndex = 0;
+// last time we sampled the thermistor
+ulong lastSampleTime = 0;
+// last temperature in Celsius
+float lastTemperature = 0;
+// last calculated resistance in Ohms
+float resistance = 0;
 
-ulong lastSampleTime = 0, lastReportTime = 0;
+// ---------------- PID Settings and Values----------------
 
-float lastTemperature = 0, resistance = 0;
 
+// ---------------- Debug settings ----------------
+// milliseconds between reports
+#define REPORTINTERVAL 1000 
+// last time we reported
+ulong lastReportTime = 0;
+
+
+// ---------------- Function prototypes ----------------
+void HandleAccessPoint();
+void HandleThermistor();
 void CalculateTemperature();
 
 void setup() {
   Serial.begin(115200);
   
+  Serial.println("Starting up Access Point...");
+  WiFi.softAP(ssid, password);
+
+  IPAddress IP = WiFi.softAPIP();
+  Serial.print("AP IP address: ");
+  Serial.println(IP);
+
+  server.begin();
 }
 
 void loop() {
+  HandleAccessPoint();
 
+  HandleThermistor();
+
+}
+
+void HandleAccessPoint(){
+  WiFiClient client = server.available(); // listen for incoming clients
+
+  if (client) {
+    Serial.println("New client connected.");
+    String currentLine = ""; // make a String to hold incoming data
+    while (client.connected()) {
+      if (client.available()) {
+        char c = client.read(); // read a byte
+        Serial.write(c); // echo it back to the serial monitor
+        header += c; // add it to the header string
+
+        if (c == '\n') { // if the byte is a newline character
+          if (currentLine.length() == 0) { 
+            // send a standard HTTP response header
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-type:text/html");
+            client.println("Connection: close");
+            client.println();
+            
+            // send the HTML content
+            client.println("<!DOCTYPE html>");
+            client.println("<html>");
+            client.println("<head><title>Tosti Reflow Oven</title></head>");
+            client.println("<body>");
+            client.println("<h1>Tosti Reflow Oven</h1>");
+            client.println("<p>Thermistor readings:</p>");
+            client.print("<p>Average analog reading: ");
+            client.print(average);
+            client.println("</p>");
+            client.print("<p>Thermistor resistance: ");
+            client.print(resistance);
+            client.println(" Ohms</p>");
+            client.print("<p>Temperature: ");
+            client.print(lastTemperature);
+            client.println(" C</p>");
+            
+            // break out of the while loop
+            break;
+          } else { // if you got a newline character, clear the current line
+            currentLine = "";
+          }
+        }
+      }
+    }
+  }
+}
+
+void HandleThermistor(){
   if (millis() - lastSampleTime >= TIMEBETWEENSAMPLES) {
     lastSampleTime = millis();
     
@@ -75,7 +155,6 @@ void loop() {
     Serial.print(lastTemperature);
     Serial.println(" *C");
   }
-
 }
 
 void CalculateTemperature(){
