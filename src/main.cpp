@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <PID_v1.h>
 
 // ---------------- WiFi and Access Point Settings and Values----------------
 // WiFi SSID and password for connecting to an existing network
@@ -41,7 +42,20 @@ float lastTemperature = 0;
 float resistance = 0;
 
 // ---------------- PID Settings and Values----------------
+#define RELAYPIN 23 // pin to control the relay
+#define STOPBTN 34
+#define STARTBTN 35
+unsigned long timeSinceReflowStarted, reflowStarted;
+unsigned long timeTempCheck = 1000;
+unsigned long lastTimeTempCheck = 0;
+double preheatTemp = 100, soakTemp = 150, reflowTemp = 230, cooldownTemp = 25;
+unsigned long preheatTime = 120000, soakTime = 60000, reflowTime = 120000, cooldownTime = 120000, totalTime = preheatTime + soakTime + reflowTime + cooldownTime;
+bool preheating = false, soaking = false, reflowing = false, coolingDown = false, newState = false;
+bool start = false;
 
+double Input, Output, Setpoint; // PID variables
+double Kp=2, Ki=5, Kd=1;
+PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 // ---------------- Debug settings ----------------
 // milliseconds between reports
@@ -51,6 +65,8 @@ ulong lastReportTime = 0;
 
 
 // ---------------- Function prototypes ----------------
+void HandleButtons();
+void HandlePID();
 void HandleAccessPoint();
 void HandleThermistor();
 void CalculateTemperature();
@@ -66,13 +82,106 @@ void setup() {
   Serial.println(IP);
 
   server.begin();
+
+  Setpoint = cooldownTemp;
+  // tell the PID to range between 0 and the full window size
+  myPID.SetOutputLimits(0, 1);
+
+  // turn the PID on
+  myPID.SetMode(AUTOMATIC);
+
+  pinMode(RELAYPIN, OUTPUT);
+  pinMode(STOPBTN, INPUT_PULLUP);
+  pinMode(STARTBTN, INPUT_PULLUP);
+  digitalWrite(RELAYPIN, LOW);
 }
 
 void loop() {
-  HandleAccessPoint();
+  HandleButtons();
+
+  HandlePID();
+
+  //HandleAccessPoint();
 
   HandleThermistor();
 
+}
+
+void HandleButtons() {
+  if (digitalRead(STOPBTN) == LOW) {
+    if (start) {
+      Serial.println("Stopping reflow process.");
+      reflowing = false;
+      coolingDown = false;
+      soaking = false;
+      preheating = false;
+      start = false;
+      digitalWrite(RELAYPIN, 0);
+    }
+  }
+
+  if (digitalRead(STARTBTN) == LOW) {
+    if (!start) {
+      Serial.println("Starting reflow process.");
+      reflowing = false;
+      coolingDown = false;
+      soaking = false;
+      preheating = true;
+      start = true;
+      reflowStarted = millis();
+    }
+  }
+}
+
+void HandlePID(){
+
+  if (!start) return; // do nothing if not started
+
+  timeSinceReflowStarted = millis() - reflowStarted;
+
+  if (timeSinceReflowStarted - lastTimeTempCheck > timeTempCheck){
+    lastTimeTempCheck = timeSinceReflowStarted;
+
+    Input = lastTemperature; // read the temperature from the thermistor
+    myPID.Compute(); // compute the PID output
+    
+    if (Output > 0.5) {
+      digitalWrite(RELAYPIN, HIGH); // turn on the relay
+    } else {
+      digitalWrite(RELAYPIN, LOW); // turn off the relay
+    }
+
+    Serial.println("PID Output: " + String(Output) + ", Setpoint: " + String(Setpoint) + ", Input: " + String(Input));
+  }
+  
+  if(timeSinceReflowStarted > (preheatTime + soakTime + reflowTime)){ // preheat and soak and reflow are complete. Start cooldown
+    if(!coolingDown){
+      newState = true;
+      preheating = false, soaking = false, reflowing = false, coolingDown = true;
+    }
+    Setpoint = cooldownTemp;
+  }
+  else if(timeSinceReflowStarted > (preheatTime + soakTime)){ // preheat and soak are complete. Start reflow
+    if(!reflowing){
+      newState = true;
+      preheating = false, soaking = false, reflowing = true, coolingDown = false;
+    }
+    Setpoint = reflowTemp;
+  }
+  else if(timeSinceReflowStarted > preheatTime){ // preheat is complete. Start soak
+    if(!soaking){
+      newState = true;
+      preheating = false, soaking = true, reflowing = false, coolingDown = false;
+    }
+    Setpoint = soakTemp;
+  }
+  else{ // cycle is starting. Start preheat
+    if(!preheating){
+      newState = true;
+      preheating = true, soaking = false, reflowing = false, coolingDown = false;
+    }
+    Setpoint = preheatTemp;
+  }
 }
 
 void HandleAccessPoint(){
@@ -141,7 +250,7 @@ void HandleThermistor(){
     
     CalculateTemperature();
   }
-
+  /*
   if (millis() - lastReportTime >= REPORTINTERVAL) {
     lastReportTime = millis();
     
@@ -155,6 +264,7 @@ void HandleThermistor(){
     Serial.print(lastTemperature);
     Serial.println(" *C");
   }
+  */
 }
 
 void CalculateTemperature(){
