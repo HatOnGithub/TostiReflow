@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Esp.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <PID_v1.h>
@@ -86,11 +87,22 @@ void setup() {
     Serial.println("LittleFS Mount Failed");
     return;
   }
+
+  uint32_t totalUsed = LittleFS.usedBytes() + ESP.getSketchSize();
+
   Serial.println("LittleFS Mounted Successfully");
-  Serial.print("Storage: ");
+  Serial.print("Total Storage: ");
+  Serial.print(totalUsed);
+  Serial.print(" / ");
+  Serial.print(ESP.getFlashChipSize());
+  Serial.print(" (" + String((float)totalUsed / (float)ESP.getFlashChipSize() * 100, 2) + "%)");
+  Serial.println(" bytes used");
+
+  Serial.println("File System Storage:");
   Serial.print(LittleFS.usedBytes());
   Serial.print(" / ");
   Serial.print(LittleFS.totalBytes());
+  Serial.print(" (" + String((float)LittleFS.usedBytes() / (float)LittleFS.totalBytes() * 100, 2) + "%)");
   Serial.println(" bytes used");
 
   Serial.println("Starting up Access Point...");
@@ -123,7 +135,7 @@ void setup() {
 void loop() {
   server.handleClient(); // handle incoming client requests
 
-  //HandleButtons();
+  HandleButtons();
 
   HandlePID();
 
