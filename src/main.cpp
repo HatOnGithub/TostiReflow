@@ -1,13 +1,15 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WebServer.h>
 #include <PID_v1.h>
+#include "LittleFS.h"
 
 // ---------------- WiFi and Access Point Settings and Values----------------
 // WiFi SSID and password for connecting to an existing network
 const char* ssid = "TostiReflow";
 const char* password = "LPLTosti";
 // Create a server that listens on port 80
-WiFiServer server(80); 
+WebServer server(80); 
 // stores the header for the HTTP response
 String header;
 
@@ -67,19 +69,41 @@ ulong lastReportTime = 0;
 // ---------------- Function prototypes ----------------
 void HandleButtons();
 void HandlePID();
-void HandleAccessPoint();
+
+void Handle_OnConnect();
+void Handle_GetCSS();
+void Handle_GetJS();
+void Handle_NotFound();
+
 void HandleThermistor();
 void CalculateTemperature();
 
+// --------------- Setup and Loop ----------------
 void setup() {
   Serial.begin(115200);
   
+  if (!LittleFS.begin()) {
+    Serial.println("LittleFS Mount Failed");
+    return;
+  }
+  Serial.println("LittleFS Mounted Successfully");
+  Serial.print("Storage: ");
+  Serial.print(LittleFS.usedBytes());
+  Serial.print(" / ");
+  Serial.print(LittleFS.totalBytes());
+  Serial.println(" bytes used");
+
   Serial.println("Starting up Access Point...");
   WiFi.softAP(ssid, password);
 
   IPAddress IP = WiFi.softAPIP();
   Serial.print("AP IP address: ");
   Serial.println(IP);
+
+  server.on("/", HTTP_GET, Handle_OnConnect);
+  server.on("/style.css", HTTP_GET, Handle_GetCSS);
+  server.on("/main.js", HTTP_GET, Handle_GetJS);
+  server.onNotFound(Handle_NotFound);
 
   server.begin();
 
@@ -97,11 +121,11 @@ void setup() {
 }
 
 void loop() {
-  HandleButtons();
+  server.handleClient(); // handle incoming client requests
+
+  //HandleButtons();
 
   HandlePID();
-
-  //HandleAccessPoint();
 
   HandleThermistor();
 
@@ -184,53 +208,44 @@ void HandlePID(){
   }
 }
 
-void HandleAccessPoint(){
-  WiFiClient client = server.available(); // listen for incoming clients
-
-  if (client) {
-    Serial.println("New client connected.");
-    String currentLine = ""; // make a String to hold incoming data
-    while (client.connected()) {
-      if (client.available()) {
-        char c = client.read(); // read a byte
-        Serial.write(c); // echo it back to the serial monitor
-        header += c; // add it to the header string
-
-        if (c == '\n') { // if the byte is a newline character
-          if (currentLine.length() == 0) { 
-            // send a standard HTTP response header
-            client.println("HTTP/1.1 200 OK");
-            client.println("Content-type:text/html");
-            client.println("Connection: close");
-            client.println();
-            
-            // send the HTML content
-            client.println("<!DOCTYPE html>");
-            client.println("<html>");
-            client.println("<head><title>Tosti Reflow Oven</title></head>");
-            client.println("<body>");
-            client.println("<h1>Tosti Reflow Oven</h1>");
-            client.println("<p>Thermistor readings:</p>");
-            client.print("<p>Average analog reading: ");
-            client.print(average);
-            client.println("</p>");
-            client.print("<p>Thermistor resistance: ");
-            client.print(resistance);
-            client.println(" Ohms</p>");
-            client.print("<p>Temperature: ");
-            client.print(lastTemperature);
-            client.println(" C</p>");
-            
-            // break out of the while loop
-            break;
-          } else { // if you got a newline character, clear the current line
-            currentLine = "";
-          }
-        }
-      }
-    }
+void Handle_OnConnect(){
+  File file = LittleFS.open("/index.html", "r");
+  if (!file) {
+    Serial.println("Failed to open file for reading");
+    server.send(404, "text/plain", "File not found");
+    return;
   }
+  server.streamFile(file, "text/html");
+  file.close();
 }
+
+void Handle_GetCSS(){
+  File file = LittleFS.open("/style.css", "r");
+  if (!file) {
+    Serial.println("Failed to open file for reading");
+    server.send(404, "text/plain", "File not found");
+    return;
+  }
+  server.streamFile(file, "text/css");
+  file.close();
+}
+
+void Handle_GetJS(){
+  File file = LittleFS.open("/main.js", "r");
+  if (!file) {
+    Serial.println("Failed to open file for reading");
+    server.send(404, "text/plain", "File not found");
+    return;
+  }
+  server.streamFile(file, "text/javascript");
+  file.close();
+}
+
+void Handle_NotFound(){
+  Serial.println("Not Found: " + server.uri());
+  server.send(404, "text/plain", "Not Found");
+}
+    
 
 void HandleThermistor(){
   if (millis() - lastSampleTime >= TIMEBETWEENSAMPLES) {
@@ -250,21 +265,6 @@ void HandleThermistor(){
     
     CalculateTemperature();
   }
-  /*
-  if (millis() - lastReportTime >= REPORTINTERVAL) {
-    lastReportTime = millis();
-    
-    Serial.print("Average analog reading "); 
-    Serial.println(average);
-
-    Serial.print("Thermistor resistance "); 
-    Serial.println(resistance);
-      
-    Serial.print("Temperature "); 
-    Serial.print(lastTemperature);
-    Serial.println(" *C");
-  }
-  */
 }
 
 void CalculateTemperature(){
