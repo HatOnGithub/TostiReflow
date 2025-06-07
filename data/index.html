@@ -8,7 +8,82 @@
         
     </head>
     <body>
-        <h1>Tosti Relfow Test</h1>
+        <header class="header">
+            <h1>Tosti Reflow: A generalised oven controller</h1>
+        </header>
+
+        <div class="nav-bar">
+            <a id="monitor">Monitor</a>
+            <a id="settings">Profile and Settings</a>
+            <a id="help">Help</a>
+            <a id="about">About</a>
+        </div>
+
+        <div class="main-content">
+            <div id="monitor-content" class="content-section">
+                <h2>Monitor</h2>
+                <div class="profile-selection">
+                    <label for="profile-select">Select Profile:</label>
+                    <select id="profile-select">
+                        
+                    </select>
+                </div>
+                <div class="monitor-display">
+                    <div class="temperature-display">
+                        <h3>Current Temperature</h3>
+                        <p id="current-temperature">0 °C</p>
+                    </div>
+                    <div class="status-display">
+                        <h3>Status</h3>
+                        <p id="status">Idle</p>
+                    </div>
+                    <div class="time-display">
+                        <h3>Elapsed Time</h3>
+                        <p id="elapsed-time">0:00</p>
+                    </div>
+                </div>
+
+                <div class="buttons">
+                    <button id="start-button">Start</button>
+                    <button id="stop-button">Stop</button>
+                    <button id="reset-button">Reset</button>
+                </div>
+
+            </div>
+
+            <div id="settings-content" class="content-section hidden">
+                <h2>Profile and Settings</h2>
+                <p>
+                    This section allows you to create and manage profiles for the reflow oven.<br>
+                    You can set the temperature, time, and other parameters for each profile.<br>
+                    Profiles can be saved and loaded for future use.
+                </p>
+                
+                
+            </div>
+
+            <div id="help-content" class="content-section hidden">
+                <h2>Help</h2>
+                
+            </div>
+
+            <div id="about-content" class="content-section hidden">
+                <h2>About</h2>
+                <p>
+                    TostiRelfow is a project to control an oven using a microcontroller.<br>
+                    It allows you to create custom profiles for reflow soldering.<br>
+                    It is designed to be simple and easy to use, with a focus on flexibility and customisation.<br>
+                    This project was started after I found out that there were no reflow ovens available at LPL.<br>
+                    Due to the high cost of commercial reflow ovens, I decided to create my own for future makers interested in SMT.<br>
+                </p>
+
+            </div>
+
+        </div>
+
+        <footer class="footer">
+            <p>This project was made at Lili's Protolab by Denny Chen (2025)</p>
+        </footer>
 
         <script src="main.js"></script>
     </body>

@@ -3,9 +3,16 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <PID_v1.h>
+#include <EEPROM.h>
 #include "LittleFS.h"
+#include <ArdiunoJson.h>
 
-// ---------------- WiFi and Access Point Settings and Values----------------
+// ---------------- Stored Profiles and Settings EEPROM adresses ----------------
+
+int MaxProfiles = 20; // maximum number of profiles
+String ProfileFolderPrefix = "/profile/"; // folder prefix for profiles
+
+// ---------------- WiFi and Access Point Settings and Values ----------------
 // WiFi SSID and password for connecting to an existing network
 const char* ssid = "TostiReflow";
 const char* password = "LPLTosti";
@@ -31,8 +38,9 @@ String header;
 #define SERIESRESISTOR 5450    
 // for ESP32, the ADC max value is 4095 (12-bit resolution)
 #define ADC_MAX_VALUE 4095 
+
 // milliseconds between samples
-#define TIMEBETWEENSAMPLES 10 
+int timeBetweenSamples = 10; 
 // stores the samples
 int samples[NUMSAMPLES], average = 0;
 // current zero index in the samples array
@@ -48,23 +56,38 @@ float resistance = 0;
 #define RELAYPIN 23 // pin to control the relay
 #define STOPBTN 34
 #define STARTBTN 35
+
 unsigned long timeSinceReflowStarted, reflowStarted;
+
 unsigned long timeTempCheck = 1000;
 unsigned long lastTimeTempCheck = 0;
-double preheatTemp = 100, soakTemp = 150, reflowTemp = 230, cooldownTemp = 25;
-unsigned long preheatTime = 120000, soakTime = 60000, reflowTime = 120000, cooldownTime = 120000, totalTime = preheatTime + soakTime + reflowTime + cooldownTime;
-bool preheating = false, soaking = false, reflowing = false, coolingDown = false, newState = false;
-bool start = false;
+
+double 
+  preheatTemp = 100, 
+  soakTemp = 150, 
+  reflowTemp = 230, 
+  cooldownTemp = 25;
+
+unsigned long 
+  preheatTime = 120000, 
+  soakTime = 60000, 
+  reflowTime = 120000, 
+  cooldownTime = 120000, 
+  totalTime = preheatTime + soakTime + reflowTime + cooldownTime;
+
+bool 
+  preheating = false, 
+  soaking = false, 
+  reflowing = false, 
+  coolingDown = false, 
+  newState = false,
+  start = false;
 
 double Input, Output, Setpoint; // PID variables
-double Kp=2, Ki=5, Kd=1;
-PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
-// ---------------- Debug settings ----------------
-// milliseconds between reports
-#define REPORTINTERVAL 1000 
-// last time we reported
-ulong lastReportTime = 0;
+double Kp=2, Ki=5, Kd=1;
+
+PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 
 // ---------------- Function prototypes ----------------
@@ -192,28 +215,24 @@ void HandlePID(){
   
   if(timeSinceReflowStarted > (preheatTime + soakTime + reflowTime)){ // preheat and soak and reflow are complete. Start cooldown
     if(!coolingDown){
-      newState = true;
       preheating = false, soaking = false, reflowing = false, coolingDown = true;
     }
     Setpoint = cooldownTemp;
   }
   else if(timeSinceReflowStarted > (preheatTime + soakTime)){ // preheat and soak are complete. Start reflow
     if(!reflowing){
-      newState = true;
       preheating = false, soaking = false, reflowing = true, coolingDown = false;
     }
     Setpoint = reflowTemp;
   }
   else if(timeSinceReflowStarted > preheatTime){ // preheat is complete. Start soak
     if(!soaking){
-      newState = true;
       preheating = false, soaking = true, reflowing = false, coolingDown = false;
     }
     Setpoint = soakTemp;
   }
   else{ // cycle is starting. Start preheat
     if(!preheating){
-      newState = true;
       preheating = true, soaking = false, reflowing = false, coolingDown = false;
     }
     Setpoint = preheatTemp;
@@ -260,7 +279,7 @@ void Handle_NotFound(){
     
 
 void HandleThermistor(){
-  if (millis() - lastSampleTime >= TIMEBETWEENSAMPLES) {
+  if (millis() - lastSampleTime >= timeBetweenSamples) {
     lastSampleTime = millis();
     
     // take a reading
@@ -289,13 +308,12 @@ void CalculateTemperature(){
   resistance = _res; // store the resistance value
   
   float steinhart;
-  steinhart = resistance / THERMISTORNOMINAL;     // (R/Ro)
-  steinhart = log(steinhart);                  // ln(R/Ro)
-  steinhart /= BCOEFFICIENT;                   // 1/B * ln(R/Ro)
+  steinhart = resistance / THERMISTORNOMINAL;       // (R/Ro)
+  steinhart = log(steinhart);                       // ln(R/Ro)
+  steinhart /= BCOEFFICIENT;                        // 1/B * ln(R/Ro)
   steinhart += 1.0 / (TEMPERATURENOMINAL + 273.15); // + (1/To)
-  steinhart = 1.0 / steinhart;                 // Invert
-  steinhart -= 273.15;                         // convert absolute temp to C
+  steinhart = 1.0 / steinhart;                      // Invert
+  steinhart -= 273.15;                              // convert absolute temp to C
 
   lastTemperature = steinhart;
-  
 }
