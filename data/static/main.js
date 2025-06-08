@@ -13,18 +13,47 @@ SettingsButton.addEventListener('click', () => showContent('settings'));
 HelpButton.addEventListener('click', () => showContent('help'));
 AboutButton.addEventListener('click', () => showContent('about'));
 
-// Fetch new data from the ESP32
-function refreshMonitor() {
-    fetch('/api/monitor')
+init();
+
+function init() {
+    // Show the monitor content by default
+    showContent('monitor');
+ 
+    // Update the profiles dropdown
+    updateProfiles();
+
+    // Fetch initial data for the monitor
+    refreshMonitor();
+
+    // Set up a timer to refresh the monitor data every 5 seconds
+    setInterval(refreshMonitor, 5000);
+}
+
+function updateProfiles(){
+    fetch('/profiles')
         .then(response => response.json())
         .then(data => {
-            // Update the monitor content with the new data
-            MonitorContent.innerHTML = `
-                <h2>Monitor Data</h2>
-                <p>Temperature: ${data.temperature} °C</p>
-                <p>Humidity: ${data.humidity} %</p>
-                <p>Pressure: ${data.pressure} hPa</p>
-            `;
+            console.log('Retrieved profiles:', data);
+            const profileSelect = document.getElementById('profile-select');
+            profileSelect.innerHTML = data; // Clear existing options
+            data.forEach(profile => {
+                const option = document.createElement('option');
+                option.value = profile;
+                option.textContent = profile;
+                profileSelect.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading profiles:', error);
+        });
+    
+}
+
+// Fetch new data from the ESP32
+function refreshMonitor() {
+    fetch('/status')
+        .then(response => response.json())
+        .then(data => {
         })
         .catch(error => {
             console.error('Error fetching monitor data:', error);

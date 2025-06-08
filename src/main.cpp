@@ -5,12 +5,14 @@
 #include <PID_v1.h>
 #include <EEPROM.h>
 #include "LittleFS.h"
-#include <ArdiunoJson.h>
+#include <ArduinoJson.h>
 
 // ---------------- Stored Profiles and Settings EEPROM adresses ----------------
 
-int MaxProfiles = 20; // maximum number of profiles
-String ProfileFolderPrefix = "/profile/"; // folder prefix for profiles
+const int MaxProfiles = 20; // maximum number of profiles
+int ProfileCount = 0; // current number of profiles
+String ProfileFolderPrefix = "/profiles"; // folder prefix for profiles
+String ProfileNames[MaxProfiles]; // array to store profile names
 
 // ---------------- WiFi and Access Point Settings and Values ----------------
 // WiFi SSID and password for connecting to an existing network
@@ -59,7 +61,7 @@ float resistance = 0;
 
 unsigned long timeSinceReflowStarted, reflowStarted;
 
-unsigned long timeTempCheck = 1000;
+unsigned long timeTempCheck = 200; 
 unsigned long lastTimeTempCheck = 0;
 
 double 
@@ -91,43 +93,61 @@ PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 
 // ---------------- Function prototypes ----------------
+void SetupFS();
+void SetupAP();
+void SetupPID();
+
 void HandleButtons();
 void HandlePID();
-
-void Handle_OnConnect();
-void Handle_GetCSS();
-void Handle_GetJS();
-void Handle_NotFound();
-
 void HandleThermistor();
 void CalculateTemperature();
+void UpdateProfileList();
+
+void OnConnect();
+void GetProfiles();
+void CreateProfile();
+void DeleteProfile();
+void SetProfile();
+void GetStatus();
+void NotFound();
+
 
 // --------------- Setup and Loop ----------------
 void setup() {
   Serial.begin(115200);
-  
+  SetupFS();
+  SetupAP();
+  SetupPID();
+}
+
+void loop() {
+  server.handleClient(); // handle incoming client requests
+  //HandleButtons();
+  HandlePID();
+  HandleThermistor();
+}
+
+// ===================================================================
+// |                     Function Definitions                        |
+// ===================================================================
+
+void SetupFS() {
+    
   if (!LittleFS.begin()) {
     Serial.println("LittleFS Mount Failed");
     return;
   }
 
-  uint32_t totalUsed = LittleFS.usedBytes() + ESP.getSketchSize();
-
   Serial.println("LittleFS Mounted Successfully");
-  Serial.print("Total Storage: ");
-  Serial.print(totalUsed);
-  Serial.print(" / ");
-  Serial.print(ESP.getFlashChipSize());
-  Serial.print(" (" + String((float)totalUsed / (float)ESP.getFlashChipSize() * 100, 2) + "%)");
-  Serial.println(" bytes used");
-
   Serial.println("File System Storage:");
   Serial.print(LittleFS.usedBytes());
   Serial.print(" / ");
   Serial.print(LittleFS.totalBytes());
   Serial.print(" (" + String((float)LittleFS.usedBytes() / (float)LittleFS.totalBytes() * 100, 2) + "%)");
   Serial.println(" bytes used");
+}
 
+void SetupAP() {
   Serial.println("Starting up Access Point...");
   WiFi.softAP(ssid, password);
 
@@ -135,13 +155,39 @@ void setup() {
   Serial.print("AP IP address: ");
   Serial.println(IP);
 
-  server.on("/", HTTP_GET, Handle_OnConnect);
-  server.on("/style.css", HTTP_GET, Handle_GetCSS);
-  server.on("/main.js", HTTP_GET, Handle_GetJS);
-  server.onNotFound(Handle_NotFound);
+  server.serveStatic("/static", LittleFS, "/static");
+  server.on("/", HTTP_GET, OnConnect);
+  server.on("/profiles", HTTP_GET, GetProfiles);
+  server.on("/createprofile", HTTP_POST, CreateProfile);
+  server.on("/deleteprofile", HTTP_DELETE, DeleteProfile);
+  server.on("/setprofile", HTTP_PUT, SetProfile);
+  server.on("/status", HTTP_GET, GetStatus);
+
+  server.on("/start", HTTP_GET, []() {
+    start = true;
+    reflowStarted = millis();
+    server.send(200, "text/plain", "Reflow process started");
+  });
+
+  server.on("/stop", HTTP_GET, []() {
+    start = false;
+    reflowing = false;
+    coolingDown = false;
+    soaking = false;
+    preheating = false;
+    digitalWrite(RELAYPIN, LOW);
+    server.send(200, "text/plain", "Reflow process stopped");
+  });
+
+  server.onNotFound(NotFound);
+
+  UpdateProfileList();
 
   server.begin();
 
+}
+
+void SetupPID(){
   Setpoint = cooldownTemp;
   // tell the PID to range between 0 and the full window size
   myPID.SetOutputLimits(0, 1);
@@ -155,17 +201,8 @@ void setup() {
   digitalWrite(RELAYPIN, LOW);
 }
 
-void loop() {
-  server.handleClient(); // handle incoming client requests
-
-  HandleButtons();
-
-  HandlePID();
-
-  HandleThermistor();
-
-}
-
+// This function handles the button presses for starting and stopping the reflow process
+// No debouncing is required as the boolean flags only allow one press to be registered at a time.
 void HandleButtons() {
   if (digitalRead(STOPBTN) == LOW) {
     if (start) {
@@ -182,16 +219,15 @@ void HandleButtons() {
   if (digitalRead(STARTBTN) == LOW) {
     if (!start) {
       Serial.println("Starting reflow process.");
-      reflowing = false;
-      coolingDown = false;
-      soaking = false;
-      preheating = true;
       start = true;
       reflowStarted = millis();
     }
   }
 }
 
+// This function handles the PID control logic
+// It uses the last temperature reading from the thermistor on a set interval
+// and adjusts the relay output based on the PID calculations.
 void HandlePID(){
 
   if (!start) return; // do nothing if not started
@@ -239,45 +275,7 @@ void HandlePID(){
   }
 }
 
-void Handle_OnConnect(){
-  File file = LittleFS.open("/index.html", "r");
-  if (!file) {
-    Serial.println("Failed to open file for reading");
-    server.send(404, "text/plain", "File not found");
-    return;
-  }
-  server.streamFile(file, "text/html");
-  file.close();
-}
-
-void Handle_GetCSS(){
-  File file = LittleFS.open("/style.css", "r");
-  if (!file) {
-    Serial.println("Failed to open file for reading");
-    server.send(404, "text/plain", "File not found");
-    return;
-  }
-  server.streamFile(file, "text/css");
-  file.close();
-}
-
-void Handle_GetJS(){
-  File file = LittleFS.open("/main.js", "r");
-  if (!file) {
-    Serial.println("Failed to open file for reading");
-    server.send(404, "text/plain", "File not found");
-    return;
-  }
-  server.streamFile(file, "text/javascript");
-  file.close();
-}
-
-void Handle_NotFound(){
-  Serial.println("Not Found: " + server.uri());
-  server.send(404, "text/plain", "Not Found");
-}
-    
-
+// This function handles the thermistor readings and calculates the temperature
 void HandleThermistor(){
   if (millis() - lastSampleTime >= timeBetweenSamples) {
     lastSampleTime = millis();
@@ -298,6 +296,9 @@ void HandleThermistor(){
   }
 }
 
+// This function calculates the temperature based on the average ADC value
+// It converts the ADC value to resistance and then calculates the temperature
+// using the Steinhart-Hart equation.
 void CalculateTemperature(){
   float _res = (float)average;
   if (_res <= 0) _res = 1; // prevent division by zero
@@ -317,3 +318,250 @@ void CalculateTemperature(){
 
   lastTemperature = steinhart;
 }
+
+// This function updates the list of profiles from the filesystem
+void UpdateProfileList(){
+  File dir = LittleFS.open(ProfileFolderPrefix, "r", true);
+  if (!dir) {
+    Serial.println("Failed to open profile directory");
+    return;
+  }
+
+  // read all files in the profile directory and store their names
+  int index = 0;
+  File file = dir.openNextFile();
+  while (file) {
+    if (index < MaxProfiles) {
+      ProfileNames[index++] = String(file.name()); // store the file name without extension
+    }
+    file = dir.openNextFile();
+  }
+
+  ProfileCount = index; // update the profile count
+
+  // fill remaining slots with empty strings
+  for (index; index < MaxProfiles; index++) {
+    ProfileNames[index] = ""; 
+  }
+  
+  dir.close();
+}
+
+//                 ==================================================================
+//                 |                     Web Server Handlers                        |
+//                 ==================================================================
+
+// ------------- This function serves the main HTML page when the root URL is accessed -------------
+void OnConnect(){
+  File file = LittleFS.open("/static/index.html", "r");
+  if (!file) {
+    Serial.println("Failed to open file for reading");
+    server.send(404, "text/plain", "File not found");
+    return;
+  }
+  server.streamFile(file, "text/html");
+  file.close();
+}
+// -------------------------------------------------------------------------------------------------
+
+// ---------------------- This function handles the request to set a profile -----------------------
+void NotFound(){
+  Serial.println("Not Found: " + server.uri());
+  server.send(404, "text/plain", "Not Found");
+}
+// -------------------------------------------------------------------------------------------------
+
+// ------------------ This function returns the list of profiles as a JSON array -------------------
+void GetProfiles() {
+  String profilesList = "[";
+  for (int i = 0; i < MaxProfiles; i++) {
+    if (ProfileNames[i].length() > 0) {
+      if (i > 0) profilesList += ",";
+      profilesList += "\"" + ProfileNames[i] + "\"";
+    }
+    else {
+      break; // stop if we hit an empty slot
+    }
+  }
+  profilesList += "]";
+
+  Serial.println("Profiles List: " + profilesList);
+
+  server.send(200, "application/json", profilesList);
+}
+// -------------------------------------------------------------------------------------------------
+
+// --------- This function creates a new profile based on the provided name and JSON data ----------
+void CreateProfile() {
+  if (ProfileCount >= MaxProfiles) {
+    server.send(400, "text/plain", "Maximum number of profiles reached");
+    return;
+  }
+
+  if (!server.hasArg("profile")) {
+    server.send(400, "text/plain", "Profile name not provided");
+    return;
+  }
+
+  String profileName = server.arg("profile");
+  if (profileName.length() == 0) {
+    server.send(400, "text/plain", "Profile name cannot be empty");
+    return;
+  }
+
+  // Check if the profile already exists
+  File existingFile = LittleFS.open(ProfileFolderPrefix + "\\" + profileName, "r");
+  if (existingFile) {
+    existingFile.close();
+    server.send(400, "text/plain", "Profile already exists");
+    return;
+  }
+
+  // Check if the json in the body is valid
+  if (!server.hasArg("plain")) {
+    server.send(400, "text/plain", "Profile data not provided");
+    return;
+  }
+
+  String profileData = server.arg("plain");
+  JsonDocument doc; // Create a JSON document with a capacity of 1024 bytes
+  DeserializationError error = deserializeJson(doc, profileData);
+  if (error) {
+    Serial.println("Failed to parse profile data: " + String(error.c_str()));
+    server.send(400, "text/plain", "Invalid profile data");
+    return;
+  }
+  // Validate required fields
+  if (!doc["preheatTemp"].is<float>() || !doc["preheatTime"].is<unsigned long>() ||
+      !doc["soakTemp"].is<float>() || !doc["soakTime"].is<unsigned long>() ||
+      !doc["reflowTemp"].is<float>() || !doc["reflowTime"].is<unsigned long>() ||
+      !doc["cooldownTemp"].is<float>() || !doc["cooldownTime"].is<unsigned long>()) {
+    server.send(400, "text/plain", "Missing required profile fields");
+    return;
+  }
+
+  // check if the profile fits within constraints
+  if (doc["preheatTemp"].as<float>() < 0 || doc["preheatTemp"].as<float>() > 300 ||
+      doc["soakTemp"].as<float>() < 0 || doc["soakTemp"].as<float>() > 300 ||
+      doc["reflowTemp"].as<float>() < 0 || doc["reflowTemp"].as<float>() > 300 ||
+      doc["cooldownTemp"].as<float>() < 0 || doc["cooldownTemp"].as<float>() > 300 ||
+
+      doc["preheatTime"].as<unsigned long>() < 0 || doc["soakTime"].as<unsigned long>() < 0 ||
+      doc["reflowTime"].as<unsigned long>() < 0 || doc["cooldownTime"].as<unsigned long>() < 0) {
+    server.send(400, "text/plain", "Profile values out of range");
+    return;
+  }
+
+  File file = LittleFS.open(ProfileFolderPrefix + "\\" + profileName, "w", true);
+  if (!file) {
+    server.send(500, "text/plain", "Failed to create profile");
+    return;
+  }
+  
+  // Serialize the JSON document to the file
+  if (serializeJson(doc, file) == 0) {
+    Serial.println("Failed to write profile data to file");
+    server.send(500, "text/plain", "Failed to write profile data");
+    file.close();
+    LittleFS.remove(ProfileFolderPrefix + "\\" + profileName); // clean up if write failed
+    return;
+  }
+
+  file.close();
+  server.send(200, "text/plain", "Profile created successfully");
+}
+// -------------------------------------------------------------------------------------------------
+
+// ------------------ This function deletes a profile based on the provided name -------------------
+void DeleteProfile() {
+  if (!server.hasArg("profile")) {
+    server.send(400, "text/plain", "Profile name not provided");
+    return;
+  }
+
+  String profileName = server.arg("profile");
+  if (LittleFS.remove(ProfileFolderPrefix + "\\" + profileName)) {
+    // Update the profile list after deletion
+    UpdateProfileList();
+    Serial.println("Profile deleted: " + profileName);
+    server.send(200, "text/plain", "Profile deleted successfully");
+  } else {
+    server.send(404, "text/plain", "Profile not found");
+  }
+}
+// -------------------------------------------------------------------------------------------------
+
+// --------------- This function sets the current profile based on the provided name ---------------
+void SetProfile(){
+  if (!server.hasArg("profile")) {
+    server.send(400, "text/plain", "Profile name not provided");
+    return;
+  }
+
+  String profileName = server.arg("profile");
+  File file = LittleFS.open(ProfileFolderPrefix + "\\" +profileName, "r");
+
+  if (!file) {
+    server.send(404, "text/plain", "Profile not found");
+    return;
+  }
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, file);
+
+  if (error) {
+    Serial.println("Failed to parse profile: " + String(error.c_str()));
+    server.send(500, "text/plain", "Failed to parse profile");
+    file.close();
+    return;
+  }
+
+  preheatTemp = doc["preheatTemp"] | 100.0;
+  preheatTime = doc["preheatTime"] | 120000; // default 2 minutes
+  soakTemp = doc["soakTemp"] | 150.0;
+  soakTime = doc["soakTime"] | 60000; // default 1 minute
+  reflowTemp = doc["reflowTemp"] | 230.0;
+  reflowTime = doc["reflowTime"] | 120000; // default 2 minutes
+  cooldownTemp = doc["cooldownTemp"] | 25.0;
+  cooldownTime = doc["cooldownTime"] | 120000; // default 2 minutes
+
+  totalTime = preheatTime + soakTime + reflowTime + cooldownTime;
+  
+  file.close();
+  
+  server.send(200, "text/plain", "Profile set successfully");
+}
+// -------------------------------------------------------------------------------------------------
+
+// ---------------- This function returns the current status of the reflow process -----------------
+void GetStatus() {
+
+  int elapsedTimeInSeconds = (int)((millis() - reflowStarted) / 1000); // elapsed time in seconds, rounded to 2 decimal places
+  int totalTimeInSeconds = (int)(totalTime / 1000); // total time in seconds
+
+  JsonDocument doc;
+  
+  doc["preheating"] = preheating;
+  doc["soaking"] = soaking;
+  doc["reflowing"] = reflowing;
+  doc["coolingDown"] = coolingDown;
+  doc["start"] = start;
+  doc["lastTemperature"] = lastTemperature;
+  doc["resistance"] = resistance;
+
+  if (start){
+    doc["time"] = String(elapsedTimeInSeconds) + "/" + String(totalTimeInSeconds) + " seconds";
+  }
+  else {
+    doc["time"] = "Idle";
+  }
+  doc["setpoint"] = Setpoint;
+  doc["pidOutput"] = Output;
+
+  String response;
+  serializeJson(doc, response);
+  
+  server.send(200, "application/json", response);
+}
+// -------------------------------------------------------------------------------------------------
+

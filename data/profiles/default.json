@@ -1,0 +1,10 @@
+{
+    "preheatTemp": "100",
+    "preheatTime": "120000",
+    "soakTemp": "150",
+    "soakTime": "60000",
+    "reflowTemp": "230",
+    "reflowTime": "120000",
+    "cooldownTemp": "25",
+    "cooldownTime": "120000"
+}
