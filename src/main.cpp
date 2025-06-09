@@ -6,6 +6,8 @@
 #include <EEPROM.h>
 #include "LittleFS.h"
 #include <ArduinoJson.h>
+#include <ESPmDNS.h>
+#include <EEPROM.h>
 
 // ---------------- Stored Profiles and Settings EEPROM adresses ----------------
 
@@ -13,6 +15,23 @@ const int MaxProfiles = 20; // maximum number of profiles
 int ProfileCount = 0; // current number of profiles
 String ProfileFolderPrefix = "/profiles"; // folder prefix for profiles
 String ProfileNames[MaxProfiles]; // array to store profile names
+
+// eeprom addresses for storing last used profile settings and PID tuning values
+const int EEPROM_PREHEAT_TEMP_ADDR = 0; // address to store preheat temperature
+const int EEPROM_PREHEAT_TIME_ADDR = 4; // address to store preheat time
+const int EEPROM_SOAK_TEMP_ADDR = 8; // address to store soak temperature
+const int EEPROM_SOAK_TIME_ADDR = 12; // address to store soak time
+const int EEPROM_REFLOW_TEMP_ADDR = 16; // address to store reflow temperature
+const int EEPROM_REFLOW_TIME_ADDR = 20; // address to store reflow time
+const int EEPROM_COOLDOWN_TEMP_ADDR = 24; // address to store cooldown temperature
+const int EEPROM_COOLDOWN_TIME_ADDR = 28; // address to store cooldown time
+
+// eeprom addresses for storing PID tuning values
+const int EEPROM_KP_ADDR = 32; // address to store Kp value
+const int EEPROM_KI_ADDR = 36; // address to store Ki value
+const int EEPROM_KD_ADDR = 40; // address to store Kd value
+
+const int EEPROM_FIRST_RUN = 44; // flag to indicate if this is the first run
 
 // ---------------- WiFi and Access Point Settings and Values ----------------
 // WiFi SSID and password for connecting to an existing network
@@ -61,7 +80,7 @@ float resistance = 0;
 
 unsigned long timeSinceReflowStarted, reflowStarted;
 
-unsigned long timeTempCheck = 200; 
+unsigned long timeTempCheck = 100; 
 unsigned long lastTimeTempCheck = 0;
 
 double 
@@ -87,12 +106,16 @@ bool
 
 double Input, Output, Setpoint; // PID variables
 
+// tune following this guide: https://tlk-energy.de/blog-en/practical-pid-tuning-guide
 double Kp=2, Ki=5, Kd=1;
 
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 
 // ---------------- Function prototypes ----------------
+void SaveSettings();
+void LoadSettings();
+
 void SetupFS();
 void SetupAP();
 void SetupPID();
@@ -104,10 +127,11 @@ void CalculateTemperature();
 void UpdateProfileList();
 
 void OnConnect();
+void SetProfileValues();
 void GetProfiles();
-void CreateProfile();
+void SaveProfile();
 void DeleteProfile();
-void SetProfile();
+void LoadProfile();
 void GetStatus();
 void NotFound();
 
@@ -115,6 +139,14 @@ void NotFound();
 // --------------- Setup and Loop ----------------
 void setup() {
   Serial.begin(115200);
+
+  if (EEPROM.read(EEPROM_FIRST_RUN) == 0) {
+    Serial.println("First run detected, saving default settings to EEPROM...");
+    SaveSettings();
+    EEPROM.put(EEPROM_FIRST_RUN, 1); // mark as not first run anymore
+  }
+
+  LoadSettings();
   SetupFS();
   SetupAP();
   SetupPID();
@@ -122,7 +154,7 @@ void setup() {
 
 void loop() {
   server.handleClient(); // handle incoming client requests
-  //HandleButtons();
+  HandleButtons();
   HandlePID();
   HandleThermistor();
 }
@@ -131,6 +163,54 @@ void loop() {
 // |                     Function Definitions                        |
 // ===================================================================
 
+// Save the current settings to EEPROM
+void SaveSettings() {
+  Serial.println("Saving settings to EEPROM...");
+  EEPROM.begin(64); // initialize EEPROM with size 64 bytes
+
+  EEPROM.put(EEPROM_PREHEAT_TEMP_ADDR, preheatTemp);
+  EEPROM.put(EEPROM_PREHEAT_TIME_ADDR, preheatTime);
+  EEPROM.put(EEPROM_SOAK_TEMP_ADDR, soakTemp);
+  EEPROM.put(EEPROM_SOAK_TIME_ADDR, soakTime);
+  EEPROM.put(EEPROM_REFLOW_TEMP_ADDR, reflowTemp);
+  EEPROM.put(EEPROM_REFLOW_TIME_ADDR, reflowTime);
+  EEPROM.put(EEPROM_COOLDOWN_TEMP_ADDR, cooldownTemp);
+  EEPROM.put(EEPROM_COOLDOWN_TIME_ADDR, cooldownTime);
+
+  totalTime = preheatTime + soakTime + reflowTime + cooldownTime; // update total time
+
+  EEPROM.put(EEPROM_KP_ADDR, Kp);
+  EEPROM.put(EEPROM_KI_ADDR, Ki);
+  EEPROM.put(EEPROM_KD_ADDR, Kd);
+
+  EEPROM.commit(); // save changes to EEPROM
+  Serial.println("Settings saved successfully");
+}
+
+// Load the settings from EEPROM
+void LoadSettings() {
+  Serial.println("Loading settings from EEPROM...");
+  EEPROM.begin(64); // initialize EEPROM with size 64 bytes
+
+  EEPROM.get(EEPROM_PREHEAT_TEMP_ADDR, preheatTemp);
+  EEPROM.get(EEPROM_PREHEAT_TIME_ADDR, preheatTime);
+  EEPROM.get(EEPROM_SOAK_TEMP_ADDR, soakTemp);
+  EEPROM.get(EEPROM_SOAK_TIME_ADDR, soakTime);
+  EEPROM.get(EEPROM_REFLOW_TEMP_ADDR, reflowTemp);
+  EEPROM.get(EEPROM_REFLOW_TIME_ADDR, reflowTime);
+  EEPROM.get(EEPROM_COOLDOWN_TEMP_ADDR, cooldownTemp);
+  EEPROM.get(EEPROM_COOLDOWN_TIME_ADDR, cooldownTime);
+
+  totalTime = preheatTime + soakTime + reflowTime + cooldownTime; // update total time
+
+  EEPROM.get(EEPROM_KP_ADDR, Kp);
+  EEPROM.get(EEPROM_KI_ADDR, Ki);
+  EEPROM.get(EEPROM_KD_ADDR, Kd);
+
+  Serial.println("Settings loaded successfully");
+}
+
+// This functions mounts LittleFS
 void SetupFS() {
     
   if (!LittleFS.begin()) {
@@ -147,6 +227,7 @@ void SetupFS() {
   Serial.println(" bytes used");
 }
 
+// This function initializes the Access Point and sets up the web server
 void SetupAP() {
   Serial.println("Starting up Access Point...");
   WiFi.softAP(ssid, password);
@@ -157,10 +238,11 @@ void SetupAP() {
 
   server.serveStatic("/static", LittleFS, "/static");
   server.on("/", HTTP_GET, OnConnect);
+  server.on("/setvalues", HTTP_POST, SetProfileValues);
   server.on("/profiles", HTTP_GET, GetProfiles);
-  server.on("/createprofile", HTTP_POST, CreateProfile);
+  server.on("/saveprofile", HTTP_POST, SaveProfile);
   server.on("/deleteprofile", HTTP_DELETE, DeleteProfile);
-  server.on("/setprofile", HTTP_PUT, SetProfile);
+  server.on("/loadprofile", HTTP_POST, LoadProfile);
   server.on("/status", HTTP_GET, GetStatus);
 
   server.on("/start", HTTP_GET, []() {
@@ -185,8 +267,14 @@ void SetupAP() {
 
   server.begin();
 
+  if (!MDNS.begin("tostireflow")) {
+    Serial.println("Error setting up MDNS responder!");
+  } else {
+    Serial.println("mDNS responder started");
+  }
 }
 
+// This function sets up the PID controller
 void SetupPID(){
   Setpoint = cooldownTemp;
   // tell the PID to range between 0 and the full window size
@@ -371,8 +459,74 @@ void NotFound(){
 }
 // -------------------------------------------------------------------------------------------------
 
+// ----------------------- This function sets the values from the sent json ------------------------
+void SetProfileValues(){
+  if (start) {
+    server.send(400, "text/plain", "Cannot set values while reflow is in progress");
+    return;
+  }
+
+  if (!server.hasArg("plain")) {
+    server.send(400, "text/plain", "No data sent");
+    return;
+  }
+
+  String jsonData = server.arg("plain");
+  Serial.println("Received JSON data: " + jsonData);
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, jsonData);
+  if (error) {
+    Serial.println("Failed to parse JSON: " + String(error.c_str()));
+    server.send(400, "text/plain", "Invalid JSON data");
+    return;
+  }
+
+  // Check if all required fields are present
+  if (!doc["preheatTemp"].as<float>() ||
+      !doc["preheatTime"].as<unsigned long>() ||
+      !doc["soakTemp"].as<float>() ||
+      !doc["soakTime"].as<unsigned long>() ||
+      !doc["reflowTemp"].as<float>() ||
+      !doc["reflowTime"].as<unsigned long>() ||
+      !doc["cooldownTemp"].as<float>() ||
+      !doc["cooldownTime"].as<unsigned long>()) {
+    server.send(400, "text/plain", "Missing required fields");
+    return;
+  }
+
+  // Set the values from the JSON document
+  preheatTemp = doc["preheatTemp"].as<float>();
+  preheatTime = doc["preheatTime"].as<unsigned long>() * 1000;
+  soakTemp = doc["soakTemp"].as<float>();
+  soakTime = doc["soakTime"].as<unsigned long>() * 1000;
+  reflowTemp = doc["reflowTemp"].as<float>();
+  reflowTime = doc["reflowTime"].as<unsigned long>() * 1000;
+  cooldownTemp = doc["cooldownTemp"].as<float>();
+  cooldownTime = doc["cooldownTime"].as<unsigned long>() * 1000;
+  totalTime = preheatTime + soakTime + reflowTime + cooldownTime;
+  
+  // Save the settings to EEPROM
+  SaveSettings();
+  Serial.println("Profile values set successfully");
+
+  // Send a success response
+  server.send(200, "text/plain", "Profile values set successfully");
+  Serial.println("Profile values set: " +
+                 String(preheatTemp) + ", " +
+                 String(preheatTime) + ", " +
+                 String(soakTemp) + ", " +
+                 String(soakTime) + ", " +
+                 String(reflowTemp) + ", " +
+                 String(reflowTime) + ", " +
+                 String(cooldownTemp) + ", " +
+                 String(cooldownTime));
+}
+// -------------------------------------------------------------------------------------------------
+
 // ------------------ This function returns the list of profiles as a JSON array -------------------
 void GetProfiles() {
+  UpdateProfileList(); // ensure the profile list is up to date
+
   String profilesList = "[";
   for (int i = 0; i < MaxProfiles; i++) {
     if (ProfileNames[i].length() > 0) {
@@ -391,8 +545,8 @@ void GetProfiles() {
 }
 // -------------------------------------------------------------------------------------------------
 
-// --------- This function creates a new profile based on the provided name and JSON data ----------
-void CreateProfile() {
+// --------------- This function creates a new profile based on the current settings ---------------
+void SaveProfile() {
   if (ProfileCount >= MaxProfiles) {
     server.send(400, "text/plain", "Maximum number of profiles reached");
     return;
@@ -417,58 +571,42 @@ void CreateProfile() {
     return;
   }
 
-  // Check if the json in the body is valid
-  if (!server.hasArg("plain")) {
-    server.send(400, "text/plain", "Profile data not provided");
-    return;
-  }
-
-  String profileData = server.arg("plain");
-  JsonDocument doc; // Create a JSON document with a capacity of 1024 bytes
-  DeserializationError error = deserializeJson(doc, profileData);
-  if (error) {
-    Serial.println("Failed to parse profile data: " + String(error.c_str()));
-    server.send(400, "text/plain", "Invalid profile data");
-    return;
-  }
-  // Validate required fields
-  if (!doc["preheatTemp"].is<float>() || !doc["preheatTime"].is<unsigned long>() ||
-      !doc["soakTemp"].is<float>() || !doc["soakTime"].is<unsigned long>() ||
-      !doc["reflowTemp"].is<float>() || !doc["reflowTime"].is<unsigned long>() ||
-      !doc["cooldownTemp"].is<float>() || !doc["cooldownTime"].is<unsigned long>()) {
-    server.send(400, "text/plain", "Missing required profile fields");
-    return;
-  }
-
-  // check if the profile fits within constraints
-  if (doc["preheatTemp"].as<float>() < 0 || doc["preheatTemp"].as<float>() > 300 ||
-      doc["soakTemp"].as<float>() < 0 || doc["soakTemp"].as<float>() > 300 ||
-      doc["reflowTemp"].as<float>() < 0 || doc["reflowTemp"].as<float>() > 300 ||
-      doc["cooldownTemp"].as<float>() < 0 || doc["cooldownTemp"].as<float>() > 300 ||
-
-      doc["preheatTime"].as<unsigned long>() < 0 || doc["soakTime"].as<unsigned long>() < 0 ||
-      doc["reflowTime"].as<unsigned long>() < 0 || doc["cooldownTime"].as<unsigned long>() < 0) {
-    server.send(400, "text/plain", "Profile values out of range");
-    return;
-  }
-
-  File file = LittleFS.open(ProfileFolderPrefix + "\\" + profileName, "w", true);
+  // Create a new file for the profile
+  File file = LittleFS.open(ProfileFolderPrefix + "\\" + profileName, "w");
   if (!file) {
     server.send(500, "text/plain", "Failed to create profile");
     return;
   }
-  
+
+  // Create a JSON document to store the profile data
+  JsonDocument doc;
+  doc["preheatTemp"] = preheatTemp;
+  doc["preheatTime"] = preheatTime;
+  doc["soakTemp"] = soakTemp;
+  doc["soakTime"] = soakTime;
+  doc["reflowTemp"] = reflowTemp;
+  doc["reflowTime"] = reflowTime;
+  doc["cooldownTemp"] = cooldownTemp;
+  doc["cooldownTime"] = cooldownTime;
+
   // Serialize the JSON document to the file
-  if (serializeJson(doc, file) == 0) {
-    Serial.println("Failed to write profile data to file");
-    server.send(500, "text/plain", "Failed to write profile data");
+  String jsonString;
+  serializeJson(doc, jsonString);
+
+  if (file.print(jsonString)) {
+    file.close();
+    Serial.println("Profile created: " + profileName);
+    
+    // Update the profile list after creation
+    UpdateProfileList();
+    
+    server.send(200, "text/plain", "Profile created successfully");
+  } else {
     file.close();
     LittleFS.remove(ProfileFolderPrefix + "\\" + profileName); // clean up if write failed
-    return;
+    server.send(500, "text/plain", "Failed to write profile data");
   }
 
-  file.close();
-  server.send(200, "text/plain", "Profile created successfully");
 }
 // -------------------------------------------------------------------------------------------------
 
@@ -492,7 +630,12 @@ void DeleteProfile() {
 // -------------------------------------------------------------------------------------------------
 
 // --------------- This function sets the current profile based on the provided name ---------------
-void SetProfile(){
+void LoadProfile(){
+  if (start) {
+    server.send(400, "text/plain", "Cannot load profile while reflow is in progress");
+    return;
+  }
+
   if (!server.hasArg("profile")) {
     server.send(400, "text/plain", "Profile name not provided");
     return;
@@ -528,6 +671,10 @@ void SetProfile(){
   totalTime = preheatTime + soakTime + reflowTime + cooldownTime;
   
   file.close();
+
+  // Save the loaded settings to EEPROM
+  SaveSettings();
+  Serial.println("Profile loaded: " + profileName);
   
   server.send(200, "text/plain", "Profile set successfully");
 }
@@ -536,7 +683,7 @@ void SetProfile(){
 // ---------------- This function returns the current status of the reflow process -----------------
 void GetStatus() {
 
-  int elapsedTimeInSeconds = (int)((millis() - reflowStarted) / 1000); // elapsed time in seconds, rounded to 2 decimal places
+  int elapsedTimeInSeconds = (int)((millis() - reflowStarted) / 1000); // elapsed time in seconds
   int totalTimeInSeconds = (int)(totalTime / 1000); // total time in seconds
 
   JsonDocument doc;
@@ -548,6 +695,15 @@ void GetStatus() {
   doc["start"] = start;
   doc["lastTemperature"] = lastTemperature;
   doc["resistance"] = resistance;
+  doc["preheatTemp"] = preheatTemp;
+  doc["preheatTime"] = preheatTime / 1000; // convert to seconds
+  doc["soakTemp"] = soakTemp;
+  doc["soakTime"] = soakTime / 1000; // convert to seconds
+  doc["reflowTemp"] = reflowTemp;
+  doc["reflowTime"] = reflowTime / 1000; // convert to seconds
+  doc["cooldownTemp"] = cooldownTemp;
+  doc["cooldownTime"] = cooldownTime / 1000; // convert to seconds
+  doc["totalTime"] = totalTime / 1000; // convert to seconds
 
   if (start){
     doc["time"] = String(elapsedTimeInSeconds) + "/" + String(totalTimeInSeconds) + " seconds";

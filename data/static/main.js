@@ -6,6 +6,9 @@ const HelpButton = document.getElementById('help');
 const HelpContent = document.getElementById('help-content');
 const AboutButton = document.getElementById('about');
 const AboutContent = document.getElementById('about-content');
+const LastStatusTime = document.getElementById('last-updated');
+
+var lastState;
 
 // Add event listeners to the buttons
 MonitorButton.addEventListener('click', () => showContent('monitor'));
@@ -15,6 +18,8 @@ AboutButton.addEventListener('click', () => showContent('about'));
 
 init();
 
+setInterval(refresStatus, 500);
+
 function init() {
     // Show the monitor content by default
     showContent('monitor');
@@ -23,10 +28,10 @@ function init() {
     updateProfiles();
 
     // Fetch initial data for the monitor
-    refreshMonitor();
+    refresStatus();
 
     // Set up a timer to refresh the monitor data every 5 seconds
-    setInterval(refreshMonitor, 5000);
+    setInterval(refresStatus, 5000);
 }
 
 function updateProfiles(){
@@ -50,14 +55,16 @@ function updateProfiles(){
 }
 
 // Fetch new data from the ESP32
-function refreshMonitor() {
+function refresStatus() {
     fetch('/status')
         .then(response => response.json())
         .then(data => {
+            lastState = data;
+            console.log('Last status data:', data);
+            LastStatusTime.textContent = `${new Date().toLocaleTimeString()}`;
         })
         .catch(error => {
             console.error('Error fetching monitor data:', error);
-            MonitorContent.innerHTML = '<p>Error fetching data. Please try again later.</p>';
         });
 }
 
