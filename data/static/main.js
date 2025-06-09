@@ -1,14 +1,19 @@
 const MonitorButton = document.getElementById('monitor');
 const MonitorContent = document.getElementById('monitor-content');
+
 const SettingsButton = document.getElementById('settings');
 const SettingsContent = document.getElementById('settings-content');
+
 const HelpButton = document.getElementById('help');
 const HelpContent = document.getElementById('help-content');
+
 const AboutButton = document.getElementById('about');
 const AboutContent = document.getElementById('about-content');
+
 const LastStatusTime = document.getElementById('last-updated');
 
 var lastState;
+var lastProfile; // this is to check if the profile was modified, aka unsaved changes
 
 // Add event listeners to the buttons
 MonitorButton.addEventListener('click', () => showContent('monitor'));
@@ -54,6 +59,30 @@ function updateProfiles(){
     
 }
 
+function loadProfile(){
+    const profileSelect = document.getElementById('profile-select');
+    const selectedProfile = profileSelect.value;
+
+    if (!selectedProfile) {
+        console.warn('No profile selected.');
+        return;
+    }
+
+    fetch('/loadprofile', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: selectedProfile })
+    })
+    .then(response => {
+        console.log(response);
+        lastProfile = selectedProfile; // Update lastProfile to the newly loaded profile
+        refresStatus(); // Refresh status after loading profile
+    })
+
+}
+
 // Fetch new data from the ESP32
 function refresStatus() {
     fetch('/status')
@@ -90,4 +119,210 @@ function showContent(contentId) {
             AboutContent.style.display = 'block';
             break;
     }
+}
+
+function startReflow(){
+    if (lastState.start === true) {
+        console.warn('Reflow is already running.');
+        return;
+    }
+
+
+    fetch('/start')
+        .then(response => response.json())
+        .then(data => {
+            console.log('Reflow started:', data);
+            refresStatus();
+        })
+        .catch(error => {
+            console.error('Error starting reflow:', error);
+        })
+        .finally(() => {
+            refresStatus();
+        });
+        
+}
+
+function stopReflow(){
+
+    if (lastState.start === false) {
+        console.warn('Reflow is not running.');
+        return;
+    }
+
+    fetch('/stop')
+        .then(response => response.json())
+        .then(data => {
+            console.log('Reflow stopped:', data);
+            refresStatus();
+        })
+        .catch(error => {
+            console.error('Error stopping reflow:', error);
+        })
+        .finally(() => {
+            refresStatus();
+        });
+}
+
+function displayStatus(){
+    if (!lastState) {
+        console.warn('No status data available.');
+        return;
+    }
+
+    const tempratureDisplay = document.getElementById('temperature-display');
+    tempratureDisplay.innerHTML = `
+        <h3>Temperature</h3>
+        <p>Current Temperature:\t${lastState.temperature} °C</p>
+        <p>Target Temperature:\t${lastState.setPoint} °C</p>
+        <p>PID Output:\t${lastState.pidOutput.toFixed(2)}</p>
+        <p>Heater: ${lastState.pidOutput > 0.5 ? 'On' : 'Off'}</p>
+    `;
+
+    const statusDisplay = document.getElementById('status-display');
+
+    var reflowStatus;
+
+    if (lastState.start === false) 
+        reflowStatus = 'Idle';
+    else if (lastState.preheating)
+        reflowStatus = 'Preheating';
+    else if (lastState.soaking)
+        reflowStatus = 'Soaking';
+    else if (lastState.reflowing)
+        reflowStatus = 'Reflowing';
+    else if (lastState.coolingdown)
+        reflowStatus = 'Cooling down';
+    else
+        reflowStatus = 'Error: Unknown state';
+
+
+    statusDisplay.innerHTML = `
+        <h3>Status</h3>
+        <p>Reflow Status: ${reflowStatus}</p>
+        `;
+
+    const timeDisplay = document.getElementById('time-display');
+    timeDisplay.innerHTML = `
+        <h3>Time</h3>
+        <p>${lastState.time}</p>
+    `;
+}
+
+function changeValues(){
+    const preheatTempInput = document.getElementById('preheat-temp');
+    const preheatTimeInput = document.getElementById('preheat-time');
+    const soakTempInput = document.getElementById('soak-temp');
+    const soakTimeInput = document.getElementById('soak-time');
+    const reflowTempInput = document.getElementById('reflow-temp');
+    const reflowTimeInput = document.getElementById('reflow-time');
+    const coolTempInput = document.getElementById('cooling-temp');
+    const coolTimeInput = document.getElementById('cooling-time');
+
+    preheatTempInput.value = parseFloat(lastState.preheatTemp);
+    preheatTimeInput.value = parseInt(lastState.preheatTime);
+    soakTempInput.value = parseFloat(lastState.soakTemp);
+    soakTimeInput.value = parseInt(lastState.soakTime);
+    reflowTempInput.value = parseFloat(lastState.reflowTemp);
+    reflowTimeInput.value = parseInt(lastState.reflowTime);
+    coolTempInput.value = parseFloat(lastState.cooldownTemp);
+    coolTimeInput.value = parseInt(lastState.cooldownTime);
+}
+
+function sendValues(){
+    
+    // send the current settings to the server to save the profile
+    const preheatTemp = parseFloat(document.getElementById('preheat-temp').value);
+    const preheatTime = parseInt(document.getElementById('preheat-time').value);
+    const soakTemp = parseFloat(document.getElementById('soak-temp').value);
+    const soakTime = parseInt(document.getElementById('soak-time').value);
+    const reflowTemp = parseFloat(document.getElementById('reflow-temp').value);
+    const reflowTime = parseInt(document.getElementById('reflow-time').value);
+    const coolTemp = parseFloat(document.getElementById('cooling-temp').value);
+    const coolTime = parseInt(document.getElementById('cooling-time').value);
+
+    if (isNaN(preheatTemp) || isNaN(preheatTime) || isNaN(soakTemp) || isNaN(soakTime) ||
+        isNaN(reflowTemp) || isNaN(reflowTime) || isNaN(coolTemp) || isNaN(coolTime)) {
+        alert('Please enter valid numeric values for all fields.');
+        return;
+    }
+
+    // Prepare the data to be sent
+    const profileData = {
+        preheatTemp: preheatTemp,
+        preheatTime: preheatTime,
+        soakTemp: soakTemp,
+        soakTime: soakTime,
+        reflowTemp: reflowTemp,
+        reflowTime: reflowTime,
+        cooldownTemp: coolTemp,
+        cooldownTime: coolTime
+    };
+
+    // Send the data to the server
+    fetch('/setvalues', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(profileData)
+    })
+}
+
+function saveProfile() {
+    const profileName = document.getElementById('profile-name').value;
+    if (!profileName) {
+        alert('Please enter a profile name.');
+        return;
+    }
+
+    // Send the profile data to the server
+    sendValues();
+
+    fetch('/saveprofile', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: profileName})
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Profile saved:', data);
+        updateProfiles();
+        lastProfile = profileName; // Update lastProfile to the newly saved profile
+    })
+    .catch(error => {
+        console.error('Error saving profile:', error);
+    });
+}
+
+function deleteProfile() {
+    const profileSelect = document.getElementById('profile-select');
+    const selectedProfile = profileSelect.value;
+
+    if (!selectedProfile) {
+        alert('Please select a profile to delete.');
+        return;
+    }
+
+    fetch('/deleteprofile', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: selectedProfile })
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Profile deleted:', data);
+        updateProfiles();
+        if (lastProfile === selectedProfile) {
+            lastProfile = null; // Reset lastProfile if the deleted profile was the current one
+        }
+    
+    })
+    .catch(error => {
+        console.error('Error deleting profile:', error);
+    });
 }

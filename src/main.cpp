@@ -613,12 +613,12 @@ void SaveProfile() {
 
 // ------------------ This function deletes a profile based on the provided name -------------------
 void DeleteProfile() {
-  if (!server.hasArg("profile")) {
+  if (!server.hasArg("name")) {
     server.send(400, "text/plain", "Profile name not provided");
     return;
   }
 
-  String profileName = server.arg("profile");
+  String profileName = server.arg("name");
   if (LittleFS.remove(ProfileFolderPrefix + "\\" + profileName)) {
     // Update the profile list after deletion
     UpdateProfileList();
@@ -637,12 +637,12 @@ void LoadProfile(){
     return;
   }
 
-  if (!server.hasArg("profile")) {
+  if (!server.hasArg("name")) {
     server.send(400, "text/plain", "Profile name not provided");
     return;
   }
 
-  String profileName = server.arg("profile");
+  String profileName = server.arg("name");
   File file = LittleFS.open(ProfileFolderPrefix + "\\" +profileName, "r");
 
   if (!file) {
