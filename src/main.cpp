@@ -17,21 +17,22 @@ String ProfileFolderPrefix = "/profiles"; // folder prefix for profiles
 String ProfileNames[MaxProfiles]; // array to store profile names
 
 // eeprom addresses for storing last used profile settings and PID tuning values
+// all used datatypes are 8 bytes long
 const int EEPROM_PREHEAT_TEMP_ADDR = 0; // address to store preheat temperature
-const int EEPROM_PREHEAT_TIME_ADDR = 4; // address to store preheat time
-const int EEPROM_SOAK_TEMP_ADDR = 8; // address to store soak temperature
-const int EEPROM_SOAK_TIME_ADDR = 12; // address to store soak time
-const int EEPROM_REFLOW_TEMP_ADDR = 16; // address to store reflow temperature
-const int EEPROM_REFLOW_TIME_ADDR = 20; // address to store reflow time
-const int EEPROM_COOLDOWN_TEMP_ADDR = 24; // address to store cooldown temperature
-const int EEPROM_COOLDOWN_TIME_ADDR = 28; // address to store cooldown time
+const int EEPROM_PREHEAT_TIME_ADDR = 8; // address to store preheat time
+const int EEPROM_SOAK_TEMP_ADDR = 16; // address to store soak temperature
+const int EEPROM_SOAK_TIME_ADDR = 24; // address to store soak time
+const int EEPROM_REFLOW_TEMP_ADDR = 32; // address to store reflow temperature
+const int EEPROM_REFLOW_TIME_ADDR = 40; // address to store reflow time
+const int EEPROM_COOLDOWN_TEMP_ADDR = 48; // address to store cooldown temperature
+const int EEPROM_COOLDOWN_TIME_ADDR = 56; // address to store cooldown time
 
 // eeprom addresses for storing PID tuning values
-const int EEPROM_KP_ADDR = 32; // address to store Kp value
-const int EEPROM_KI_ADDR = 36; // address to store Ki value
-const int EEPROM_KD_ADDR = 40; // address to store Kd value
+const int EEPROM_KP_ADDR = 64; // address to store Kp value
+const int EEPROM_KI_ADDR = 72; // address to store Ki value
+const int EEPROM_KD_ADDR = 80; // address to store Kd value
 
-const int EEPROM_FIRST_RUN = 44; // flag to indicate if this is the first run
+const int EEPROM_FIRST_RUN = 88; // flag to indicate if this is the first run
 
 // ---------------- WiFi and Access Point Settings and Values ----------------
 // WiFi SSID and password for connecting to an existing network
