@@ -126,6 +126,7 @@ void HandlePID();
 void HandleThermistor();
 void CalculateTemperature();
 void UpdateProfileList();
+void HandleSerialCommands();
 
 void OnConnect();
 void SetProfileValues();
@@ -158,6 +159,7 @@ void loop() {
   HandleButtons();
   HandlePID();
   HandleThermistor();
+  HandleSerialCommands();
 }
 
 // ===================================================================
@@ -335,10 +337,15 @@ void HandlePID(){
       digitalWrite(RELAYPIN, LOW); // turn off the relay
     }
 
-    Serial.println("PID Output: " + String(Output) + ", Setpoint: " + String(Setpoint) + ", Input: " + String(Input));
+    //Serial.println("PIDOutput:" + String(Output) + ",Setpoint:" + String(Setpoint) +",Input: " + String(Input));
+    Serial.println(String(lastTemperature) + "," + String(Setpoint));
   }
-  
-  if(timeSinceReflowStarted > (preheatTime + soakTime + reflowTime)){ // preheat and soak and reflow are complete. Start cooldown
+
+  if (timeSinceReflowStarted > totalTime){
+    start = false, preheating = false, soaking = false, reflowing = false, coolingDown = false;
+    digitalWrite(RELAYPIN, LOW);
+  }
+  else if(timeSinceReflowStarted > (preheatTime + soakTime + reflowTime)){ // preheat and soak and reflow are complete. Start cooldown
     if(!coolingDown){
       preheating = false, soaking = false, reflowing = false, coolingDown = true;
     }
@@ -405,24 +412,30 @@ void CalculateTemperature(){
   steinhart = 1.0 / steinhart;                      // Invert
   steinhart -= 273.15;                              // convert absolute temp to C
 
+  if (steinhart < 20.0) steinhart = 20.0;
+
   lastTemperature = steinhart;
 }
 
 // This function updates the list of profiles from the filesystem
 void UpdateProfileList(){
-  File dir = LittleFS.open(ProfileFolderPrefix, "r", true);
+  File dir = LittleFS.open(ProfileFolderPrefix, "r");
   if (!dir) {
     Serial.println("Failed to open profile directory");
     return;
   }
 
+  if (!dir.isDirectory()){
+    Serial.println("Not a directory");
+    server.send(500, "text/plain", "FS failure");
+  }
+
   // read all files in the profile directory and store their names
   int index = 0;
   File file = dir.openNextFile();
-  while (file) {
-    if (index < MaxProfiles) {
-      ProfileNames[index++] = String(file.name()); // store the file name without extension
-    }
+  while (file && index < MaxProfiles) {
+    ProfileNames[index++] = String(file.name()); // store the file name without extension
+    
     file = dir.openNextFile();
   }
 
@@ -434,6 +447,35 @@ void UpdateProfileList(){
   }
   
   dir.close();
+}
+
+void HandleSerialCommands(){
+
+  if (!Serial.available()) return; // no data available
+
+  String command = Serial.readStringUntil('\n'); // read the command from serial
+  command.trim(); // remove any leading/trailing whitespace
+
+  if (command.startsWith("setPID ")) {
+    // set PID values from serial command
+    int spaceIndex1 = command.indexOf(' ', 7);
+    int spaceIndex2 = command.indexOf(' ', spaceIndex1 + 1);
+    int spaceIndex3 = command.indexOf(' ', spaceIndex2 + 1);
+
+    if (spaceIndex1 == -1 || spaceIndex2 == -1 || spaceIndex3 == -1) {
+      Serial.println("Invalid command format. Use: setPID <Kp> <Ki> <Kd>");
+      return;
+    }
+
+    Kp = command.substring(7, spaceIndex1).toFloat();
+    Ki = command.substring(spaceIndex1 + 1, spaceIndex2).toFloat();
+    Kd = command.substring(spaceIndex2 + 1, spaceIndex3).toFloat();
+
+    myPID.SetTunings(Kp, Ki, Kd); // update PID tunings
+    SaveSettings(); // save to EEPROM
+    Serial.println("PID values updated: Kp=" + String(Kp) + ", Ki=" + String(Ki) + ", Kd=" + String(Kd));
+  }
+  
 }
 
 //                 ==================================================================
@@ -552,28 +594,37 @@ void SaveProfile() {
     server.send(400, "text/plain", "Maximum number of profiles reached");
     return;
   }
+  String rawJson = server.arg("plain");
+  Serial.println("Save profile data: " + rawJson);
+  JsonDocument incoming;
+  DeserializationError error = deserializeJson(incoming, rawJson);
 
-  if (!server.hasArg("profile")) {
+  if (error){
+    Serial.println("Failed to parse JSON: " + String(error.c_str()));
+    server.send(400, "text/plain", "Invalid JSON data");
+    return;
+  }
+
+  if (!incoming["name"].as<String>()) {
+    Serial.println(server.arg(0));
     server.send(400, "text/plain", "Profile name not provided");
     return;
   }
 
-  String profileName = server.arg("profile");
+  String profileName = incoming["name"].as<String>();
   if (profileName.length() == 0) {
     server.send(400, "text/plain", "Profile name cannot be empty");
     return;
   }
 
   // Check if the profile already exists
-  File existingFile = LittleFS.open(ProfileFolderPrefix + "\\" + profileName, "r");
-  if (existingFile) {
-    existingFile.close();
+  if (LittleFS.exists(ProfileFolderPrefix + "/" + profileName)) {
     server.send(400, "text/plain", "Profile already exists");
     return;
   }
 
   // Create a new file for the profile
-  File file = LittleFS.open(ProfileFolderPrefix + "\\" + profileName, "w");
+  File file = LittleFS.open(ProfileFolderPrefix + "/" + profileName, "w", true);
   if (!file) {
     server.send(500, "text/plain", "Failed to create profile");
     return;
@@ -613,12 +664,15 @@ void SaveProfile() {
 
 // ------------------ This function deletes a profile based on the provided name -------------------
 void DeleteProfile() {
-  if (!server.hasArg("name")) {
+  JsonDocument incoming;
+  DeserializationError error = deserializeJson(incoming, server.arg(0));
+
+  if (!incoming["name"].as<String>()) {
     server.send(400, "text/plain", "Profile name not provided");
     return;
   }
 
-  String profileName = server.arg("name");
+  String profileName = incoming["name"].as<String>();
   if (LittleFS.remove(ProfileFolderPrefix + "\\" + profileName)) {
     // Update the profile list after deletion
     UpdateProfileList();
@@ -637,21 +691,39 @@ void LoadProfile(){
     return;
   }
 
-  if (!server.hasArg("name")) {
+  String rawJson = server.arg("plain");
+  Serial.println("Save profile data: " + rawJson);
+  JsonDocument incoming;
+  DeserializationError error = deserializeJson(incoming, rawJson);
+
+  if (error){
+    Serial.println("Failed to parse JSON: " + String(error.c_str()));
+    server.send(400, "text/plain", "Invalid JSON data");
+    return;
+  }
+
+  if (!incoming["name"].as<String>()) {
+    Serial.println(server.arg(0));
     server.send(400, "text/plain", "Profile name not provided");
     return;
   }
 
-  String profileName = server.arg("name");
-  File file = LittleFS.open(ProfileFolderPrefix + "\\" +profileName, "r");
-
-  if (!file) {
-    server.send(404, "text/plain", "Profile not found");
+  String profileName = incoming["name"].as<String>();
+  if (profileName.length() == 0) {
+    server.send(400, "text/plain", "Profile name cannot be empty");
     return;
   }
 
+  // Check if the profile exists
+  if (!LittleFS.exists(ProfileFolderPrefix + "/" + profileName)) {
+    server.send(400, "text/plain", "Profile does not exist");
+    return;
+  }
+
+  File file = LittleFS.open(ProfileFolderPrefix + "/" + profileName, "r");
+
   JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, file);
+  error = deserializeJson(doc, file);
 
   if (error) {
     Serial.println("Failed to parse profile: " + String(error.c_str()));

@@ -23,7 +23,8 @@ AboutButton.addEventListener('click', () => showContent('about'));
 
 init();
 
-setInterval(refresStatus, 500);
+// Set up a timer to refresh the monitor data every second
+setInterval(refreshStatus, 1000);
 
 function init() {
     // Show the monitor content by default
@@ -33,10 +34,7 @@ function init() {
     updateProfiles();
 
     // Fetch initial data for the monitor
-    refresStatus();
-
-    // Set up a timer to refresh the monitor data every 5 seconds
-    setInterval(refresStatus, 5000);
+    refreshStatus(true);
 }
 
 function updateProfiles(){
@@ -78,19 +76,21 @@ function loadProfile(){
     .then(response => {
         console.log(response);
         lastProfile = selectedProfile; // Update lastProfile to the newly loaded profile
-        refresStatus(); // Refresh status after loading profile
+        refreshStatus(true); // Refresh status after loading profile
     })
 
 }
 
 // Fetch new data from the ESP32
-function refresStatus() {
+function refreshStatus(updateProfileValues = false) {
     fetch('/status')
         .then(response => response.json())
         .then(data => {
             lastState = data;
-            console.log('Last status data:', data);
             LastStatusTime.textContent = `${new Date().toLocaleTimeString()}`;
+            displayStatus();
+            if (updateProfileValues)
+                changeValues();
         })
         .catch(error => {
             console.error('Error fetching monitor data:', error);
@@ -132,13 +132,13 @@ function startReflow(){
         .then(response => response.json())
         .then(data => {
             console.log('Reflow started:', data);
-            refresStatus();
+            refreshStatus();
         })
         .catch(error => {
             console.error('Error starting reflow:', error);
         })
         .finally(() => {
-            refresStatus();
+            refreshStatus();
         });
         
 }
@@ -154,13 +154,13 @@ function stopReflow(){
         .then(response => response.json())
         .then(data => {
             console.log('Reflow stopped:', data);
-            refresStatus();
+            refreshStatus();
         })
         .catch(error => {
             console.error('Error stopping reflow:', error);
         })
         .finally(() => {
-            refresStatus();
+            refreshStatus();
         });
 }
 
@@ -173,8 +173,8 @@ function displayStatus(){
     const tempratureDisplay = document.getElementById('temperature-display');
     tempratureDisplay.innerHTML = `
         <h3>Temperature</h3>
-        <p>Current Temperature:\t${lastState.temperature} °C</p>
-        <p>Target Temperature:\t${lastState.setPoint} °C</p>
+        <p>Current Temperature:\t${lastState.lastTemperature} °C (Note: Measures 20°C minimum)</p>
+        <p>Target Temperature:\t${lastState.setpoint} °C</p>
         <p>PID Output:\t${lastState.pidOutput.toFixed(2)}</p>
         <p>Heater: ${lastState.pidOutput > 0.5 ? 'On' : 'Off'}</p>
     `;
@@ -191,7 +191,7 @@ function displayStatus(){
         reflowStatus = 'Soaking';
     else if (lastState.reflowing)
         reflowStatus = 'Reflowing';
-    else if (lastState.coolingdown)
+    else if (lastState.coolingDown)
         reflowStatus = 'Cooling down';
     else
         reflowStatus = 'Error: Unknown state';
@@ -270,7 +270,7 @@ function sendValues(){
 }
 
 function saveProfile() {
-    const profileName = document.getElementById('profile-name').value;
+    var profileName = document.getElementById('profile-name').value;
     if (!profileName) {
         alert('Please enter a profile name.');
         return;
@@ -279,17 +279,19 @@ function saveProfile() {
     // Send the profile data to the server
     sendValues();
 
+    profileName += `.json`;
+
     fetch('/saveprofile', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ name: profileName})
+        body: JSON.stringify({name: profileName})
     })
-    .then(response => response.json())
-    .then(data => {
-        console.log('Profile saved:', data);
+    .then(response => {
+        console.log('Profile saved:', response);
         updateProfiles();
+
         lastProfile = profileName; // Update lastProfile to the newly saved profile
     })
     .catch(error => {
