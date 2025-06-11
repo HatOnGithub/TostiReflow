@@ -15,7 +15,6 @@
         <div class="nav-bar">
             <a id="monitor">Monitor</a>
             <a id="settings">Profile and Settings</a>
-            <a id="help">Help</a>
             <a id="about">About</a>
         </div>
 
@@ -105,12 +104,17 @@
                 </div>
                 <button onclick="sendValues()">Send New Settings</button>
 
+                <div class="oven-settings">
+                    <h3>PID settings</h3>
+                    <label for="kp">Kp</label>
+                    <input type="number" id="kp" placeholder="Enter a number">
+                    <label for="ki">Ki</label>
+                    <input type="number" id="ki" placeholder="Enter a number">
+                    <label for="kd">Kd</label>
+                    <input type="number" id="kd" placeholder="Enter a number">
+                </div>
+                <button onclick="sendPID()">Send PID values</button>
 
-            </div>
-
-            <div id="help-content" class="content-section hidden">
-                <h2>Help</h2>
-                
             </div>
 
             <div id="about-content" class="content-section hidden">

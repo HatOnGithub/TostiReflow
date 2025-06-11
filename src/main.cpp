@@ -21,6 +21,7 @@ String CurrentProfileName = "Custom Profile"; // currently loaded profile name
 
 // eeprom addresses for storing last used profile settings and PID tuning values
 // all used datatypes are 8 bytes long
+
 const int EEPROM_PREHEAT_TEMP_ADDR = 0; // address to store preheat temperature
 const int EEPROM_PREHEAT_TIME_ADDR = 8; // address to store preheat time
 const int EEPROM_SOAK_TEMP_ADDR = 16; // address to store soak temperature
@@ -127,6 +128,8 @@ SSD1306Wire display(0x3c, 16, 17); // I2C address, SDA, SCL pins
 // ---------------- Function prototypes ----------------
 void SaveSettings();
 void LoadSettings();
+void PutString(int adr, String str);
+String GetString(int adr);
 
 void SetupFS();
 void SetupAP();
@@ -143,6 +146,7 @@ void HandleSerialCommands();
 
 void OnConnect();
 void SetProfileValues();
+void SetPIDValues();
 void GetProfiles();
 void SaveProfile();
 void DeleteProfile();
@@ -155,11 +159,14 @@ void NotFound();
 void setup() {
   Serial.begin(115200);
 
-  if (EEPROM.read(EEPROM_FIRST_RUN) == 0) {
+  Serial.println("First Run Flag: " + String(EEPROM.read(EEPROM_FIRST_RUN)));
+  /*
+  if (EEPROM.read(EEPROM_FIRST_RUN) == (uint8_t)0) {
     Serial.println("First run detected, saving default settings to EEPROM...");
+    EEPROM.write(EEPROM_FIRST_RUN, (uint8_t)1); // mark as not first run anymore
     SaveSettings();
-    EEPROM.put(EEPROM_FIRST_RUN, 1); // mark as not first run anymore
   }
+  */
 
   LoadSettings();
   SetupFS();
@@ -184,7 +191,7 @@ void loop() {
 // Save the current settings to EEPROM
 void SaveSettings() {
   Serial.println("Saving settings to EEPROM...");
-  EEPROM.begin(64); // initialize EEPROM with size 64 bytes
+  EEPROM.begin(512); // initialize EEPROM with size 512 bytes
 
   EEPROM.put(EEPROM_PREHEAT_TEMP_ADDR, preheatTemp);
   EEPROM.put(EEPROM_PREHEAT_TIME_ADDR, preheatTime);
@@ -201,8 +208,7 @@ void SaveSettings() {
   EEPROM.put(EEPROM_KI_ADDR, Ki);
   EEPROM.put(EEPROM_KD_ADDR, Kd);
 
-  EEPROM.put(EEPROM_LASTPROFILE_NAME_ADDR, CurrentProfileName); // save the last used profile name
-
+  PutString(EEPROM_LASTPROFILE_NAME_ADDR, CurrentProfileName);
   EEPROM.commit(); // save changes to EEPROM
   Serial.println("Settings saved successfully");
 }
@@ -210,7 +216,7 @@ void SaveSettings() {
 // Load the settings from EEPROM
 void LoadSettings() {
   Serial.println("Loading settings from EEPROM...");
-  EEPROM.begin(64); // initialize EEPROM with size 64 bytes
+  EEPROM.begin(512); // initialize EEPROM with size 64 bytes
 
   EEPROM.get(EEPROM_PREHEAT_TEMP_ADDR, preheatTemp);
   EEPROM.get(EEPROM_PREHEAT_TIME_ADDR, preheatTime);
@@ -227,9 +233,29 @@ void LoadSettings() {
   EEPROM.get(EEPROM_KI_ADDR, Ki);
   EEPROM.get(EEPROM_KD_ADDR, Kd);
 
-  EEPROM.get(EEPROM_LASTPROFILE_NAME_ADDR, CurrentProfileName); // load the last used profile name
+  CurrentProfileName = GetString(EEPROM_LASTPROFILE_NAME_ADDR);
 
   Serial.println("Settings loaded successfully");
+}
+
+void PutString(int adr, String str){
+  uint8_t len = str.length();
+  EEPROM.write(adr, len);
+  for (int i = 0; i < len; i++){
+    EEPROM.write(adr+1+i, str[i]);
+  }
+}
+
+String GetString(int adr){
+  int len = EEPROM.read(adr);
+  char data[len+1];
+
+  for (int i=0; i < len; i++){
+    data[i] = (char)EEPROM.read(adr+1+i);
+  }
+  data[len] = '\0';
+
+  return String(data);
 }
 
 // This functions mounts LittleFS
@@ -261,6 +287,7 @@ void SetupAP() {
   server.serveStatic("/static", LittleFS, "/static");
   server.on("/", HTTP_GET, OnConnect);
   server.on("/setvalues", HTTP_POST, SetProfileValues);
+  server.on("/setPIDvalues", HTTP_POST, SetPIDValues);
   server.on("/profiles", HTTP_GET, GetProfiles);
   server.on("/saveprofile", HTTP_POST, SaveProfile);
   server.on("/deleteprofile", HTTP_POST, DeleteProfile);
@@ -630,6 +657,45 @@ void SetProfileValues(){
 }
 // -------------------------------------------------------------------------------------------------
 
+// --------------------------------- This function sets PID values ---------------------------------
+void SetPIDValues(){
+  if (start) {
+    server.send(400, "text/plain", "Cannot set values while reflow is in progress");
+    return;
+  }
+
+  if (!server.hasArg("plain")) {
+    server.send(400, "text/plain", "No data sent");
+    return;
+  }
+
+  String jsonData = server.arg("plain");
+  Serial.println("Received JSON data: " + jsonData);
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, jsonData);
+  if (error) {
+    Serial.println("Failed to parse JSON: " + String(error.c_str()));
+    server.send(400, "text/plain", "Invalid JSON data");
+    return;
+  }
+
+  if (!doc["kp"].as<double>()|| !doc["ki"].as<double>() || !doc["kd"].as<double>()){
+    server.send(400, "text/plain", "Missing required field(s)");
+    return;
+  }
+
+  Kp = doc["kp"].as<double>();
+  Ki = doc["ki"].as<double>();
+  Kd = doc["kd"].as<double>();
+
+  myPID.SetTunings(Kp, Ki, Kd);
+  SaveSettings();
+  Serial.println("New PID Settings: Kp= " + String(Kp) + " Ki= " + String(Ki) + " Kd= " + String(Kd));
+  server.send(200, "text/plain", "PID values set successfully");
+}
+
+// -------------------------------------------------------------------------------------------------
+
 // ------------------ This function returns the list of profiles as a JSON array -------------------
 void GetProfiles() {
   UpdateProfileList(); // ensure the profile list is up to date
@@ -717,7 +783,7 @@ void SaveProfile() {
 
     // Save the current profile name to EEPROM
     CurrentProfileName = profileName;
-    EEPROM.put(EEPROM_LASTPROFILE_NAME_ADDR, CurrentProfileName);
+    PutString(EEPROM_LASTPROFILE_NAME_ADDR, CurrentProfileName);
     EEPROM.commit(); // save changes to EEPROM
     
     server.send(200, "text/plain", "Profile created successfully");
@@ -865,6 +931,9 @@ void GetStatus() {
   doc["cooldownTemp"] = cooldownTemp;
   doc["cooldownTime"] = cooldownTime / 1000; // convert to seconds
   doc["totalTime"] = totalTime / 1000; // convert to seconds
+  doc["kp"] = Kp;
+  doc["ki"] = Ki;
+  doc["kd"] = Kd;
   doc["currentProfile"] = CurrentProfileName;
 
   if (start){

@@ -4,9 +4,6 @@ const MonitorContent = document.getElementById('monitor-content');
 const SettingsButton = document.getElementById('settings');
 const SettingsContent = document.getElementById('settings-content');
 
-const HelpButton = document.getElementById('help');
-const HelpContent = document.getElementById('help-content');
-
 const AboutButton = document.getElementById('about');
 const AboutContent = document.getElementById('about-content');
 
@@ -18,7 +15,6 @@ var lastProfile; // this is to check if the profile was modified, aka unsaved ch
 // Add event listeners to the buttons
 MonitorButton.addEventListener('click', () => showContent('monitor'));
 SettingsButton.addEventListener('click', () => showContent('settings'));
-HelpButton.addEventListener('click', () => showContent('help'));
 AboutButton.addEventListener('click', () => showContent('about'));
 
 init();
@@ -103,7 +99,6 @@ function showContent(contentId) {
     // Hide all content sections
     MonitorContent.style.display = 'none';
     SettingsContent.style.display = 'none';
-    HelpContent.style.display = 'none';
     AboutContent.style.display = 'none';
 
     // Show the selected content section
@@ -113,9 +108,6 @@ function showContent(contentId) {
             break;
         case 'settings':
             SettingsContent.style.display = 'block';
-            break;
-        case 'help':
-            HelpContent.style.display = 'block';
             break;
         case 'about':
             AboutContent.style.display = 'block';
@@ -247,6 +239,9 @@ function changeValues(){
     const reflowTimeInput = document.getElementById('reflow-time');
     const coolTempInput = document.getElementById('cooling-temp');
     const coolTimeInput = document.getElementById('cooling-time');
+    const kp = document.getElementById('kp');
+    const ki = document.getElementById('ki');
+    const kd = document.getElementById('kd');
 
     preheatTempInput.value = parseFloat(lastState.preheatTemp);
     preheatTimeInput.value = parseInt(lastState.preheatTime);
@@ -256,6 +251,9 @@ function changeValues(){
     reflowTimeInput.value = parseInt(lastState.reflowTime);
     coolTempInput.value = parseFloat(lastState.cooldownTemp);
     coolTimeInput.value = parseInt(lastState.cooldownTime);
+    kp.value = parseFloat(lastState.kp);
+    ki.value = parseFloat(lastState.ki);
+    kd.value = parseFloat(lastState.kd);
 }
 
 function sendValues(){
@@ -301,6 +299,30 @@ function sendValues(){
         alert(error);
     });
 }
+
+function sendPID(){
+
+    if (!confirm("Are you sure you want to change these values? The old values will not be saved"))
+        return;
+
+    const kp = document.getElementById("kp").value;
+    const ki = document.getElementById("ki").value;
+    const kd = document.getElementById("kd").value;
+    const PIDdata = {kp: kp, ki: ki, kd: kd };
+
+    fetch('/setPIDvalues', {
+        method: 'POST',
+        headers:{
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(PIDdata)
+    }).then(()=>{
+        alert("Set successfully");
+    }).error(error =>{
+        alert(error);
+    })
+}
+
 function saveProfile() {
     var profileName = document.getElementById('profile-name').value;
     if (!profileName) {
