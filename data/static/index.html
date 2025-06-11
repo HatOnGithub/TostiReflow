@@ -22,15 +22,15 @@
         <div class="main-content">
             <div id="monitor-content" class="content-section">
                 <h2>Monitor</h2>
-
-
-
-                <div class="profile-selection">
-                    <label for="profile-select">Select Profile:</label>
-                    <select id="profile-select">
-                        
-                    </select>
-                    <button id="load-profile-button" onclick="loadProfile()">Load Profile</button>
+                <span id="current-profile"></span>
+                <div class="profile-details">
+                    <p id="preheat-detail"></p>
+                    <b> > </b>
+                    <p id="soak-detail"></p>
+                    <b> > </b>
+                    <p id="reflow-detail"></p>
+                    <b> > </b>
+                    <p id="cooling-detail"></p>
                 </div>
                 <div class="monitor-display">
                     <div id="temperature-display">
@@ -61,44 +61,50 @@
                     Profiles can be saved and loaded for future use.
                 </p>
                 
+                <div class="profile-selection">
+                    <label for="profile-select">Select Profile:</label>
+                    <select id="profile-select">
+                        
+                    </select>
+                    <button onclick="loadProfile()">Load Profile</button>
+                    <button onclick="deleteProfile()">Delete Profile</button>
+                </div>
                 <div class="profile-management">
                     <label for="profile-name">New Profile Name:</label>
                     <input type="text" id="profile-name" placeholder="Enter profile name">
-                    <button id="save-profile-button" onclick="saveProfile()">Save New Profile</button>
+                    <button id="save-profile-button" onclick="saveProfile()">Save Current Settings as New Profile</button>
                 </div>
-                
-                <form id="profile-form">
-                    <div class="profile-phase">
-                        <h4>Preheat</h4>
-                        <label for="preheat-temp">Temperature (°C):</label>
-                        <input type="number" id="preheat-temp" placeholder="Enter temperature">
-                        <label for="preheat-time">Time (seconds):</label>
-                        <input type="number" id="preheat-time" placeholder="Enter time">
-                    </div>
-                    <div class="profile-phase">
-                        <h4>Soak</h4>
-                        <label for="soak-temp">Temperature (°C):</label>
-                        <input type="number" id="soak-temp" placeholder="Enter temperature">
-                        <label for="soak-time">Time (seconds):</label>
-                        <input type="number" id="soak-time" placeholder="Enter time">
-                    </div>
-                    <div class="profile-phase">
-                        <h4>Reflow</h4>
-                        <label for="reflow-temp">Temperature (°C):</label>
-                        <input type="number" id="reflow-temp" placeholder="Enter temperature">
-                        <label for="reflow-time">Time (seconds):</label>
-                        <input type="number" id="reflow-time" placeholder="Enter time">
-                    </div>
-                    <div class="profile-phase">
-                        <h4>Cooldown</h4>
-                        <label for="cooling-temp">Temperature (°C):</label>
-                        <input type="number" id="cooling-temp" placeholder="Enter temperature">
-                        <label for="cooling-time">Time (seconds):</label>
-                        <input type="number" id="cooling-time" placeholder="Enter time">
-                    </div>
-                    <button type="submit" id="save-profile-settings-button">Save Profile Settings</button>
+            
+                <div class="profile-phase">
+                    <h4>Preheat</h4>
+                    <label for="preheat-temp">Temperature (°C):</label>
+                    <input type="number" id="preheat-temp" placeholder="Enter temperature">
+                    <label for="preheat-time">Time (seconds):</label>
+                    <input type="number" id="preheat-time" placeholder="Enter time">
+                </div>
+                <div class="profile-phase">
+                    <h4>Soak</h4>
+                    <label for="soak-temp">Temperature (°C):</label>
+                    <input type="number" id="soak-temp" placeholder="Enter temperature">
+                    <label for="soak-time">Time (seconds):</label>
+                    <input type="number" id="soak-time" placeholder="Enter time">
+                </div>
+                <div class="profile-phase">
+                    <h4>Reflow</h4>
+                    <label for="reflow-temp">Temperature (°C):</label>
+                    <input type="number" id="reflow-temp" placeholder="Enter temperature">
+                    <label for="reflow-time">Time (seconds):</label>
+                    <input type="number" id="reflow-time" placeholder="Enter time">
+                </div>
+                <div class="profile-phase">
+                    <h4>Cooldown</h4>
+                    <label for="cooling-temp">Temperature (°C):</label>
+                    <input type="number" id="cooling-temp" placeholder="Enter temperature">
+                    <label for="cooling-time">Time (seconds):</label>
+                    <input type="number" id="cooling-time" placeholder="Enter time">
+                </div>
+                <button onclick="sendValues()">Send New Settings</button>
 
-                </form>
 
             </div>
 

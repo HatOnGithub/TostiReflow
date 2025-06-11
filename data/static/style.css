@@ -1,68 +1,106 @@
 html, body {
-    min-height: 100vh;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    font-family: Arial, sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  font-family: Arial, sans-serif;
 }
 
 
 .header{
-    position: sticky;
-    top:0;
-    background-color: #f1f1f1;
-    padding: 0px 20px;
-    padding-top: 10px;
-    text-align: left;
-    min-height: 80px;
+  position: sticky;
+  top:0;
+  background-color: #f1f1f1;
+  padding: 0px 20px;
+  padding-top: 10px;
+  text-align: left;
+  min-height: 80px;
 }
 
-.hidden { display: none; }
-
-  /* nav bar*/
 .nav-bar {
-    text-align: left;
-    padding-left: 20px;
-    white-space: nowrap;
-    overflow: auto;
-    background-color: #ffcd00;
-    margin-bottom: 10px;
-  }
-  
-  .nav-bar a {
-    display: inline-block;
-    padding: 10px;
-    margin: 0;
-    color: #000000;
-    text-decoration: none;
-    font-weight: bold;
-  }
-  
-  .nav-bar a:hover {
-    background-color: #e6b800; /* Darker yellow on hover */
-    color: #ffffff; /* Change text color to white on hover */
-  }
+  text-align: left;
+  padding-left: 20px;
+  white-space: nowrap;
+  overflow: auto;
+  background-color: #ffcd00;
+  margin-bottom: 10px;
+}
+
+.nav-bar a {
+  display: inline-block;
+  padding: 10px;
+  margin: 0;
+  color: #000000;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.nav-bar a:hover {
+  background-color: #e6b800; /* Darker yellow on hover */
+  color: #ffffff; /* Change text color to white on hover */
+}
 
 
 .main-content{
-    padding: 20px;
-    min-height: 70%;
-    flex: 1;
-    background-color: #ffffff;
+  padding: 20px;
+  min-height: 70%;
+  flex: 1;
+  background-color: #ffffff;
+}
+
+select{
+  padding: 10px;
+  margin: 5px 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+option{
+  padding: 10px;
+  margin: 5px 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.profile-details{
+  display: flex;
+  flex-direction: row;
+  min-height: 100px;
+  align-items: center;
+  text-align: center;
+}
+
+.profile-details p{
+  min-width: 100px;
+  padding: 20px 10px;
+  background: #ccc;
+  border-radius: 5px;
+}
+
+.profile-details b{
+  margin: 0px 10px;
+}
+
+input {
+  padding: 10px;
+  margin: 5px 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  width: calc(100% - 22px); /* Adjust width to account for padding and border */
 }
 
 button{
-    background-color: #C00A35; /* uu red */
-    color: white;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 5px;
-    cursor: pointer;
+  background-color: #C00A35; /* uu red */
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
 }
 
 .footer{
-    min-height: 60px;
-    background-color: #f1f1f1;
-    padding: 10px;
-    text-align: left;
+  min-height: 60px;
+  background-color: #f1f1f1;
+  padding: 10px;
+  text-align: left;
 }

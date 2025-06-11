@@ -8,6 +8,8 @@
 #include <ArduinoJson.h>
 #include <ESPmDNS.h>
 #include <EEPROM.h>
+#include <Wire.h> 
+#include <SSD1306Wire.h>
 
 // ---------------- Stored Profiles and Settings EEPROM adresses ----------------
 
@@ -15,6 +17,7 @@ const int MaxProfiles = 20; // maximum number of profiles
 int ProfileCount = 0; // current number of profiles
 String ProfileFolderPrefix = "/profiles"; // folder prefix for profiles
 String ProfileNames[MaxProfiles]; // array to store profile names
+String CurrentProfileName = "Custom Profile"; // currently loaded profile name
 
 // eeprom addresses for storing last used profile settings and PID tuning values
 // all used datatypes are 8 bytes long
@@ -33,6 +36,11 @@ const int EEPROM_KI_ADDR = 72; // address to store Ki value
 const int EEPROM_KD_ADDR = 80; // address to store Kd value
 
 const int EEPROM_FIRST_RUN = 88; // flag to indicate if this is the first run
+
+// Given that strings are of unknown length, we store the last used profile name in EEPROM
+// after everything else, so it does not interfere with the other settings.
+const int EEPROM_LASTPROFILE_NAME_ADDR = 89; // address to store the last used profile name
+
 
 // ---------------- WiFi and Access Point Settings and Values ----------------
 // WiFi SSID and password for connecting to an existing network
@@ -112,6 +120,9 @@ double Kp=2, Ki=5, Kd=1;
 
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
+// Display Settings
+SSD1306Wire display(0x3c, 16, 17); // I2C address, SDA, SCL pins
+
 
 // ---------------- Function prototypes ----------------
 void SaveSettings();
@@ -120,8 +131,10 @@ void LoadSettings();
 void SetupFS();
 void SetupAP();
 void SetupPID();
+void SetupDisplay();
 
 void HandleButtons();
+void HandleDisplay();
 void HandlePID();
 void HandleThermistor();
 void CalculateTemperature();
@@ -152,11 +165,13 @@ void setup() {
   SetupFS();
   SetupAP();
   SetupPID();
+  SetupDisplay();
 }
 
 void loop() {
   server.handleClient(); // handle incoming client requests
   HandleButtons();
+  HandleDisplay();
   HandlePID();
   HandleThermistor();
   HandleSerialCommands();
@@ -186,6 +201,8 @@ void SaveSettings() {
   EEPROM.put(EEPROM_KI_ADDR, Ki);
   EEPROM.put(EEPROM_KD_ADDR, Kd);
 
+  EEPROM.put(EEPROM_LASTPROFILE_NAME_ADDR, CurrentProfileName); // save the last used profile name
+
   EEPROM.commit(); // save changes to EEPROM
   Serial.println("Settings saved successfully");
 }
@@ -209,6 +226,8 @@ void LoadSettings() {
   EEPROM.get(EEPROM_KP_ADDR, Kp);
   EEPROM.get(EEPROM_KI_ADDR, Ki);
   EEPROM.get(EEPROM_KD_ADDR, Kd);
+
+  EEPROM.get(EEPROM_LASTPROFILE_NAME_ADDR, CurrentProfileName); // load the last used profile name
 
   Serial.println("Settings loaded successfully");
 }
@@ -244,7 +263,7 @@ void SetupAP() {
   server.on("/setvalues", HTTP_POST, SetProfileValues);
   server.on("/profiles", HTTP_GET, GetProfiles);
   server.on("/saveprofile", HTTP_POST, SaveProfile);
-  server.on("/deleteprofile", HTTP_DELETE, DeleteProfile);
+  server.on("/deleteprofile", HTTP_POST, DeleteProfile);
   server.on("/loadprofile", HTTP_POST, LoadProfile);
   server.on("/status", HTTP_GET, GetStatus);
 
@@ -292,6 +311,18 @@ void SetupPID(){
   digitalWrite(RELAYPIN, LOW);
 }
 
+void SetupDisplay() {
+  if (!display.init()){
+    Serial.println("SSD1306 display initialization failed!");
+    return;
+  };
+  display.displayOn();
+  display.setContrast(255);
+  display.setFont(ArialMT_Plain_10);
+  display.clear();
+  display.display();
+}
+
 // This function handles the button presses for starting and stopping the reflow process
 // No debouncing is required as the boolean flags only allow one press to be registered at a time.
 void HandleButtons() {
@@ -314,6 +345,37 @@ void HandleButtons() {
       reflowStarted = millis();
     }
   }
+}
+
+void HandleDisplay(){
+  if (!start) {
+    display.clear();
+    display.drawString(0, 0, "Reflow Oven");
+    display.drawString(0, 10, "Current Profile:");\
+    display.drawString(0, 20, "\"" + CurrentProfileName + "\"");
+    display.drawString(0, 30, "Current Temperature: " + String(lastTemperature) + " C");
+    display.drawString(0, 40, "Press START to begin");
+    display.display();
+    return;
+  }
+
+  display.clear();
+  
+  if (preheating) {
+    display.drawString(0, 0, "Preheating...");
+  } else if (soaking) {
+    display.drawString(0, 0, "Soaking...");
+  } else if (reflowing) {
+    display.drawString(0, 0, "Reflowing...");
+  } else if (coolingDown) {
+    display.drawString(0, 0, "Cooling Down...");
+  }
+
+  display.drawString(0, 10, "Temp: " + String(lastTemperature) + " C");
+  display.drawString(0, 20, "Setpoint: " + String(Setpoint) + " C");
+  display.drawString(0, 30, "Time Elapsed: " + String(timeSinceReflowStarted / 1000) + " s");
+  
+  display.display();
 }
 
 // This function handles the PID control logic
@@ -547,6 +609,8 @@ void SetProfileValues(){
   cooldownTemp = doc["cooldownTemp"].as<float>();
   cooldownTime = doc["cooldownTime"].as<unsigned long>() * 1000;
   totalTime = preheatTime + soakTime + reflowTime + cooldownTime;
+
+  CurrentProfileName = "Custom Profile"; // set a default name for the profile
   
   // Save the settings to EEPROM
   SaveSettings();
@@ -606,7 +670,6 @@ void SaveProfile() {
   }
 
   if (!incoming["name"].as<String>()) {
-    Serial.println(server.arg(0));
     server.send(400, "text/plain", "Profile name not provided");
     return;
   }
@@ -651,6 +714,11 @@ void SaveProfile() {
     
     // Update the profile list after creation
     UpdateProfileList();
+
+    // Save the current profile name to EEPROM
+    CurrentProfileName = profileName;
+    EEPROM.put(EEPROM_LASTPROFILE_NAME_ADDR, CurrentProfileName);
+    EEPROM.commit(); // save changes to EEPROM
     
     server.send(200, "text/plain", "Profile created successfully");
   } else {
@@ -664,8 +732,17 @@ void SaveProfile() {
 
 // ------------------ This function deletes a profile based on the provided name -------------------
 void DeleteProfile() {
+
+  String rawJson = server.arg("plain");
+  Serial.println("Save profile data: " + rawJson);
   JsonDocument incoming;
-  DeserializationError error = deserializeJson(incoming, server.arg(0));
+  DeserializationError error = deserializeJson(incoming, rawJson);
+
+  if (error){
+    Serial.println("Failed to parse JSON: " + String(error.c_str()));
+    server.send(400, "text/plain", "Invalid JSON data");
+    return;
+  }
 
   if (!incoming["name"].as<String>()) {
     server.send(400, "text/plain", "Profile name not provided");
@@ -673,7 +750,18 @@ void DeleteProfile() {
   }
 
   String profileName = incoming["name"].as<String>();
-  if (LittleFS.remove(ProfileFolderPrefix + "\\" + profileName)) {
+  if (profileName.length() == 0) {
+    server.send(400, "text/plain", "Profile name cannot be empty");
+    return;
+  }
+
+  // Check if the profile already exists
+  if (!LittleFS.exists(ProfileFolderPrefix + "/" + profileName)) {
+    server.send(400, "text/plain", "Profile does not exists");
+    return;
+  }
+
+  if (LittleFS.remove(ProfileFolderPrefix + "/" + profileName)) {
     // Update the profile list after deletion
     UpdateProfileList();
     Serial.println("Profile deleted: " + profileName);
@@ -703,7 +791,6 @@ void LoadProfile(){
   }
 
   if (!incoming["name"].as<String>()) {
-    Serial.println(server.arg(0));
     server.send(400, "text/plain", "Profile name not provided");
     return;
   }
@@ -740,6 +827,7 @@ void LoadProfile(){
   reflowTime = doc["reflowTime"] | 120000; // default 2 minutes
   cooldownTemp = doc["cooldownTemp"] | 25.0;
   cooldownTime = doc["cooldownTime"] | 120000; // default 2 minutes
+  CurrentProfileName = profileName; // set the current profile name
 
   totalTime = preheatTime + soakTime + reflowTime + cooldownTime;
   
@@ -777,6 +865,7 @@ void GetStatus() {
   doc["cooldownTemp"] = cooldownTemp;
   doc["cooldownTime"] = cooldownTime / 1000; // convert to seconds
   doc["totalTime"] = totalTime / 1000; // convert to seconds
+  doc["currentProfile"] = CurrentProfileName;
 
   if (start){
     doc["time"] = String(elapsedTimeInSeconds) + "/" + String(totalTimeInSeconds) + " seconds";

@@ -89,8 +89,10 @@ function refreshStatus(updateProfileValues = false) {
             lastState = data;
             LastStatusTime.textContent = `${new Date().toLocaleTimeString()}`;
             displayStatus();
-            if (updateProfileValues)
+            if (updateProfileValues){
+                lastProfile = lastState.currentProfile;
                 changeValues();
+            }
         })
         .catch(error => {
             console.error('Error fetching monitor data:', error);
@@ -169,6 +171,33 @@ function displayStatus(){
         console.warn('No status data available.');
         return;
     }
+
+    const currentProfile = document.getElementById("current-profile");
+    currentProfile.innerHTML = `<b>Current Profile: ${lastProfile}</b>`;
+
+    const preheatDetail = document.getElementById("preheat-detail");
+    preheatDetail.innerHTML = 
+    `<b>Preheat</b><br><br>
+    ${lastState.preheatTemp}  °C<br>
+    ${lastState.preheatTime} S`;
+
+    const soakDetail = document.getElementById("soak-detail");
+    soakDetail.innerHTML = 
+    `<b>Soak</b><br><br>
+    ${lastState.soakTemp}  °C<br>
+    ${lastState.soakTime} S`;
+
+    const reflowDetail = document.getElementById("reflow-detail");
+    reflowDetail.innerHTML =
+    `<b>Reflow</b><br><br>
+    ${lastState.reflowTemp} °C<br>
+    ${lastState.reflowTime} S`;
+
+    const cooldownDetail = document.getElementById("cooling-detail");
+    cooldownDetail.innerHTML =
+    `<b>Cooldown</b><br><br>
+    ${lastState.cooldownTemp} °C<br>
+    ${lastState.cooldownTime} S`;
 
     const tempratureDisplay = document.getElementById('temperature-display');
     tempratureDisplay.innerHTML = `
@@ -266,9 +295,12 @@ function sendValues(){
             'Content-Type': 'application/json'
         },
         body: JSON.stringify(profileData)
-    })
+    }).then(() => {
+        alert("Set Successfully");
+    }).catch(error => {
+        alert(error);
+    });
 }
-
 function saveProfile() {
     var profileName = document.getElementById('profile-name').value;
     if (!profileName) {
@@ -277,7 +309,25 @@ function saveProfile() {
     }
 
     // Send the profile data to the server
-    sendValues();
+     const preheatTemp = parseFloat(document.getElementById('preheat-temp').value);
+     const preheatTime = parseInt(document.getElementById('preheat-time').value);
+     const soakTemp = parseFloat(document.getElementById('soak-temp').value);
+     const soakTime = parseInt(document.getElementById('soak-time').value);
+     const reflowTemp = parseFloat(document.getElementById('reflow-temp').value);
+     const reflowTime = parseInt(document.getElementById('reflow-time').value);
+     const coolTemp = parseFloat(document.getElementById('cooling-temp').value);
+     const coolTime = parseInt(document.getElementById('cooling-time').value);
+    
+    // if the values are the same as the last state, don't send them
+    if (lastState.preheatTemp === preheatTemp &&
+        lastState.preheatTime === preheatTime &&
+        lastState.soakTemp === soakTemp &&
+        lastState.soakTime === soakTime &&
+        lastState.reflowTemp === reflowTemp &&
+        lastState.reflowTime === reflowTime &&
+        lastState.cooldownTemp === coolTemp &&
+        lastState.cooldownTime === coolTime
+    ) sendValues();
 
     profileName += `.json`;
 
@@ -308,16 +358,16 @@ function deleteProfile() {
         return;
     }
 
+    if (!confirm(`Are you sure you want to delete "${selectedProfile}"?`))
+        return;
+
     fetch('/deleteprofile', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({ name: selectedProfile })
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log('Profile deleted:', data);
+    }).then(() => {
         updateProfiles();
         if (lastProfile === selectedProfile) {
             lastProfile = null; // Reset lastProfile if the deleted profile was the current one
