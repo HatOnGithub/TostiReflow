@@ -62,7 +62,7 @@ String header;
 #define TEMPERATURENOMINAL 25   
 // how many samples to take and average, more takes longer
 // but is more 'smooth'
-#define NUMSAMPLES 5
+#define NUMSAMPLES 25
 // The beta coefficient of the thermistor (usually 3000-4000)
 #define BCOEFFICIENT 4267
 // the value of the 'other' resistor
@@ -90,7 +90,7 @@ float resistance = 0;
 
 unsigned long timeSinceReflowStarted, reflowStarted;
 
-unsigned long timeTempCheck = 100; 
+unsigned long timeTempCheck = 250; 
 unsigned long lastTimeTempCheck = 0;
 
 double 
@@ -117,12 +117,13 @@ bool
 double Input, Output, Setpoint; // PID variables
 
 // tune following this guide: https://tlk-energy.de/blog-en/practical-pid-tuning-guide
-double Kp=2, Ki=5, Kd=1;
+double Kp=0.05, Ki=0, Kd=0.005, bias = 0;
 
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
-// Display Settings
+// ---------------------- Display Settings----------------------------
 SSD1306Wire display(0x3c, 16, 17); // I2C address, SDA, SCL pins
+unsigned long lastRefresh, refreshTime = 100;
 
 
 // ---------------- Function prototypes ----------------
@@ -233,6 +234,8 @@ void LoadSettings() {
   EEPROM.get(EEPROM_KI_ADDR, Ki);
   EEPROM.get(EEPROM_KD_ADDR, Kd);
 
+  myPID.SetTunings(Kp, Ki, Kd);
+
   CurrentProfileName = GetString(EEPROM_LASTPROFILE_NAME_ADDR);
 
   Serial.println("Settings loaded successfully");
@@ -329,6 +332,8 @@ void SetupPID(){
   // tell the PID to range between 0 and the full window size
   myPID.SetOutputLimits(0, 1);
 
+  myPID.SetSampleTime(timeBetweenSamples);
+
   // turn the PID on
   myPID.SetMode(AUTOMATIC);
 
@@ -345,6 +350,7 @@ void SetupDisplay() {
   };
   display.displayOn();
   display.setContrast(255);
+  display.flipScreenVertically();
   display.setFont(ArialMT_Plain_10);
   display.clear();
   display.display();
@@ -375,6 +381,13 @@ void HandleButtons() {
 }
 
 void HandleDisplay(){
+  if (millis() - lastRefresh < refreshTime){
+    return;
+  }
+
+  
+  lastRefresh = millis();
+
   if (!start) {
     display.clear();
     display.drawString(0, 0, "Reflow Oven");
@@ -417,7 +430,7 @@ void HandlePID(){
   if (timeSinceReflowStarted - lastTimeTempCheck > timeTempCheck){
     lastTimeTempCheck = timeSinceReflowStarted;
 
-    Input = lastTemperature; // read the temperature from the thermistor
+    Input = lastTemperature - bias; // read the temperature from the thermistor
     myPID.Compute(); // compute the PID output
     
     if (Output > 0.5) {
@@ -427,7 +440,7 @@ void HandlePID(){
     }
 
     //Serial.println("PIDOutput:" + String(Output) + ",Setpoint:" + String(Setpoint) +",Input: " + String(Input));
-    Serial.println(String(lastTemperature) + "," + String(Setpoint));
+    Serial.println(String(lastTemperature) + "," + String(Setpoint) + "," + String((int)(Output * 100)));
   }
 
   if (timeSinceReflowStarted > totalTime){
@@ -549,20 +562,19 @@ void HandleSerialCommands(){
     // set PID values from serial command
     int spaceIndex1 = command.indexOf(' ', 7);
     int spaceIndex2 = command.indexOf(' ', spaceIndex1 + 1);
-    int spaceIndex3 = command.indexOf(' ', spaceIndex2 + 1);
 
-    if (spaceIndex1 == -1 || spaceIndex2 == -1 || spaceIndex3 == -1) {
+    if (spaceIndex1 == -1 || spaceIndex2 == -1) {
       Serial.println("Invalid command format. Use: setPID <Kp> <Ki> <Kd>");
       return;
     }
 
     Kp = command.substring(7, spaceIndex1).toFloat();
     Ki = command.substring(spaceIndex1 + 1, spaceIndex2).toFloat();
-    Kd = command.substring(spaceIndex2 + 1, spaceIndex3).toFloat();
+    Kd = command.substring(spaceIndex2 + 1, command.length()).toFloat();
 
     myPID.SetTunings(Kp, Ki, Kd); // update PID tunings
     SaveSettings(); // save to EEPROM
-    Serial.println("PID values updated: Kp=" + String(Kp) + ", Ki=" + String(Ki) + ", Kd=" + String(Kd));
+    Serial.println("PID values updated: Kp=" + String(Kp, 4) + ", Ki=" + String(Ki, 4) + ", Kd=" + String(Kd, 4));
   }
   
 }
@@ -679,18 +691,13 @@ void SetPIDValues(){
     return;
   }
 
-  if (!doc["kp"].as<double>()|| !doc["ki"].as<double>() || !doc["kd"].as<double>()){
-    server.send(400, "text/plain", "Missing required field(s)");
-    return;
-  }
-
-  Kp = doc["kp"].as<double>();
-  Ki = doc["ki"].as<double>();
-  Kd = doc["kd"].as<double>();
+  Kp = doc["kp"].as<float>();
+  Ki = doc["ki"].as<float>();
+  Kd = doc["kd"].as<float>();
 
   myPID.SetTunings(Kp, Ki, Kd);
   SaveSettings();
-  Serial.println("New PID Settings: Kp= " + String(Kp) + " Ki= " + String(Ki) + " Kd= " + String(Kd));
+  Serial.println("New PID Settings: Kp= " + String(Kp, 4) + " Ki= " + String(Ki, 4) + " Kd= " + String(Kd, 4));
   server.send(200, "text/plain", "PID values set successfully");
 }
 

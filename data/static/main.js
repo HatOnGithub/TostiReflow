@@ -20,7 +20,7 @@ AboutButton.addEventListener('click', () => showContent('about'));
 init();
 
 // Set up a timer to refresh the monitor data every second
-setInterval(refreshStatus, 1000);
+setInterval(refreshStatus, 500);
 
 function init() {
     // Show the monitor content by default
@@ -301,14 +301,24 @@ function sendValues(){
 }
 
 function sendPID(){
+    const kp = parseFloat(document.getElementById("kp").value);
+    const ki = parseFloat(document.getElementById("ki").value);
+    const kd = parseFloat(document.getElementById("kd").value);
+
+    if (isNaN(kp) || isNaN(ki) || isNaN(kp)){
+        alert("Invalid Values");
+        return;
+    }
 
     if (!confirm("Are you sure you want to change these values? The old values will not be saved"))
         return;
 
-    const kp = document.getElementById("kp").value;
-    const ki = document.getElementById("ki").value;
-    const kd = document.getElementById("kd").value;
-    const PIDdata = {kp: kp, ki: ki, kd: kd };
+    const PIDdata = 
+    {
+        kp: kp, 
+        ki: ki, 
+        kd: kd 
+    };
 
     fetch('/setPIDvalues', {
         method: 'POST',
@@ -318,7 +328,7 @@ function sendPID(){
         body: JSON.stringify(PIDdata)
     }).then(()=>{
         alert("Set successfully");
-    }).error(error =>{
+    }).catch(error =>{
         alert(error);
     })
 }
