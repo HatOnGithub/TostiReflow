@@ -65,8 +65,10 @@
                     <select id="profile-select">
                         
                     </select>
-                    <button onclick="loadProfile()">Load Profile</button>
-                    <button onclick="deleteProfile()">Delete Profile</button>
+                    <div class="profile-buttons">
+                        <button onclick="loadProfile()">Load Profile</button>
+                        <button onclick="deleteProfile()">Delete Profile</button>
+                    </div>
                 </div>
                 <div class="profile-management">
                     <label for="profile-name">New Profile Name:</label>
@@ -132,9 +134,12 @@
         </div>
 
         <footer class="footer">
-            <p>Last update from server received: <span id="last-updated"></span></p>
-
-            <p>This project was made at Lili's Protolab by Denny Chen (2025)</p>
+            <img src="static/images/TostiReflowLogo.png" alt="TostiRelfow Logo" class="logo">
+            <p>
+                Last update from server received: <span id="last-updated"></span><br>
+                <br>
+                This project was made at Lili's Protolab by Denny Chen (2025)
+            </p>
         </footer>
 
         <script src="static/main.js"></script>

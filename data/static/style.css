@@ -4,13 +4,15 @@ html, body {
   display: flex;
   flex-direction: column;
   font-family: Arial, sans-serif;
+  background-color: #000000;
+  color: #ffffff;
 }
 
 
 .header{
   position: sticky;
   top:0;
-  background-color: #f1f1f1;
+  background-color: #333333;
   padding: 0px 20px;
   padding-top: 10px;
   text-align: left;
@@ -45,13 +47,15 @@ html, body {
   padding: 20px;
   min-height: 70%;
   flex: 1;
-  background-color: #ffffff;
+  background-color: #000000;
 }
 
 select{
+  width: 200px;
   padding: 10px;
   margin: 5px 0;
   border: 1px solid #ccc;
+  background-color: #333333;
   border-radius: 4px;
 }
 
@@ -62,18 +66,24 @@ option{
   border-radius: 4px;
 }
 
+.settings-content button{
+  margin-top: 10px;
+}
+
 .profile-details{
   display: flex;
   flex-direction: row;
   min-height: 100px;
   align-items: center;
   text-align: center;
+  white-space: nowrap;
+  overflow: auto;
 }
 
 .profile-details p{
   min-width: 100px;
   padding: 20px 10px;
-  background: #ccc;
+  background: #333333;
   border-radius: 5px;
 }
 
@@ -81,12 +91,44 @@ option{
   margin: 0px 10px;
 }
 
+.profile-selection{
+  margin-bottom: 10px;
+}
+
+.profile-buttons{
+  width: fit-content;
+}
+
+.profile-management{
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-phase{
+  display: flex;
+  flex-direction: column;
+}
+
+.oven-settings input{
+  width: 50px;;
+  margin-left: 3px;
+  margin-right: 10px;
+}
+
+.oven-settings label{
+  font-size: large;
+  font-weight: bold;
+}
+
 input {
   padding: 10px;
   margin: 5px 0;
   border: 1px solid #ccc;
   border-radius: 4px;
+  background-color: #333333;
+  color: white;
   width: calc(100% - 22px); /* Adjust width to account for padding and border */
+  max-width: 500px;
 }
 
 button{
@@ -96,11 +138,32 @@ button{
   padding: 10px 20px;
   border-radius: 5px;
   cursor: pointer;
+  width: fit-content;
+}
+
+.logo{
+  width: 100px;
+  height: auto;
+  margin-right: 20px;
 }
 
 .footer{
+  display: flex;
+  flex-direction: row;
   min-height: 60px;
-  background-color: #f1f1f1;
+  background-color: #333333;
   padding: 10px;
   text-align: left;
+}
+
+/* Responsive Design */
+@media ( max-width > 500px){
+  .main-content {
+    padding-left: 40px;
+  }
+
+  .profile-selection {
+    display: flex;
+    flex-direction: row;
+  }
 }

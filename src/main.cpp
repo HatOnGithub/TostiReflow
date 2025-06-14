@@ -121,6 +121,13 @@ double Kp=0.05, Ki=0, Kd=0.005, bias = 0;
 
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
+// Slow PWM Settings and Values
+#define PWM_PERIOD 500 // frequency of the PWM signal
+#define PWM_STEPS 10
+
+unsigned long lastPeriod = 0; // last time the PWM signal was updated
+unsigned long dutyCycleStep = PWM_PERIOD / PWM_STEPS; // how much to increase the duty cycle each step
+
 // ---------------------- Display Settings----------------------------
 SSD1306Wire display(0x3c, 16, 17); // I2C address, SDA, SCL pins
 unsigned long lastRefresh, refreshTime = 100;
@@ -140,6 +147,7 @@ void SetupDisplay();
 void HandleButtons();
 void HandleDisplay();
 void HandlePID();
+void HandleSlowPWM();
 void HandleThermistor();
 void CalculateTemperature();
 void UpdateProfileList();
@@ -161,13 +169,6 @@ void setup() {
   Serial.begin(115200);
 
   Serial.println("First Run Flag: " + String(EEPROM.read(EEPROM_FIRST_RUN)));
-  /*
-  if (EEPROM.read(EEPROM_FIRST_RUN) == (uint8_t)0) {
-    Serial.println("First run detected, saving default settings to EEPROM...");
-    EEPROM.write(EEPROM_FIRST_RUN, (uint8_t)1); // mark as not first run anymore
-    SaveSettings();
-  }
-  */
 
   LoadSettings();
   SetupFS();
@@ -181,6 +182,7 @@ void loop() {
   HandleButtons();
   HandleDisplay();
   HandlePID();
+  HandleSlowPWM();
   HandleThermistor();
   HandleSerialCommands();
 }
@@ -309,7 +311,7 @@ void SetupAP() {
     coolingDown = false;
     soaking = false;
     preheating = false;
-    digitalWrite(RELAYPIN, LOW);
+    Output = 0; // stop the PID output
     server.send(200, "text/plain", "Reflow process stopped");
   });
 
@@ -340,7 +342,8 @@ void SetupPID(){
   pinMode(RELAYPIN, OUTPUT);
   pinMode(STOPBTN, INPUT_PULLUP);
   pinMode(STARTBTN, INPUT_PULLUP);
-  digitalWrite(RELAYPIN, LOW);
+  
+  Output = 0; // initialize Output to 0
 }
 
 void SetupDisplay() {
@@ -367,7 +370,8 @@ void HandleButtons() {
       soaking = false;
       preheating = false;
       start = false;
-      digitalWrite(RELAYPIN, 0);
+      
+      Output = 0; // stop the PID output
     }
   }
 
@@ -385,7 +389,6 @@ void HandleDisplay(){
     return;
   }
 
-  
   lastRefresh = millis();
 
   if (!start) {
@@ -432,12 +435,6 @@ void HandlePID(){
 
     Input = lastTemperature - bias; // read the temperature from the thermistor
     myPID.Compute(); // compute the PID output
-    
-    if (Output > 0.5) {
-      digitalWrite(RELAYPIN, HIGH); // turn on the relay
-    } else {
-      digitalWrite(RELAYPIN, LOW); // turn off the relay
-    }
 
     //Serial.println("PIDOutput:" + String(Output) + ",Setpoint:" + String(Setpoint) +",Input: " + String(Input));
     Serial.println(String(lastTemperature) + "," + String(Setpoint) + "," + String((int)(Output * 100)));
@@ -445,7 +442,7 @@ void HandlePID(){
 
   if (timeSinceReflowStarted > totalTime){
     start = false, preheating = false, soaking = false, reflowing = false, coolingDown = false;
-    digitalWrite(RELAYPIN, LOW);
+    Output = 0;
   }
   else if(timeSinceReflowStarted > (preheatTime + soakTime + reflowTime)){ // preheat and soak and reflow are complete. Start cooldown
     if(!coolingDown){
@@ -470,6 +467,30 @@ void HandlePID(){
       preheating = true, soaking = false, reflowing = false, coolingDown = false;
     }
     Setpoint = preheatTemp;
+  }
+}
+
+void HandleSlowPWM() {
+  if (!start) {
+    digitalWrite(RELAYPIN, LOW); // ensure relay is off when not started
+    return; // do nothing if not started
+  }
+
+  // This function is used to control the relay with a slow PWM signal
+  if (millis() - lastPeriod > PWM_PERIOD){
+    lastPeriod = millis();
+
+    if (Output > 0){
+      digitalWrite(RELAYPIN, HIGH); // turn on the relay
+
+      // calculate the duty cycle based on the Output value
+      int steps = (int)(Output *  PWM_STEPS); // convert Output to steps 
+      unsigned long dutyCycle = steps * dutyCycleStep; // calculate the duty cycle in milliseconds
+    }
+  }
+
+  if (millis() - lastPeriod > dutyCycleStep) {
+    digitalWrite(RELAYPIN, LOW); // turn off the relay
   }
 }
 
