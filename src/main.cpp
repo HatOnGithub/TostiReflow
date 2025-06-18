@@ -338,6 +338,7 @@ void SetupPID(){
 
   // turn the PID on
   myPID.SetMode(AUTOMATIC);
+  myPID.SetIntegralBounds(-10, 10); // set integral bounds to prevent windup
 
   pinMode(RELAYPIN, OUTPUT);
   pinMode(STOPBTN, INPUT_PULLUP);
