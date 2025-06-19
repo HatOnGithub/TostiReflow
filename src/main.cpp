@@ -127,6 +127,7 @@ PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 unsigned long lastPeriod = 0; // last time the PWM signal was updated
 unsigned long dutyCycleStep = PWM_PERIOD / PWM_STEPS; // how much to increase the duty cycle each step
+unsigned long dutyCycle = 0; // current duty cycle in milliseconds
 
 // ---------------------- Display Settings----------------------------
 SSD1306Wire display(0x3c, 16, 17); // I2C address, SDA, SCL pins
@@ -485,11 +486,14 @@ void HandleSlowPWM() {
 
       // calculate the duty cycle based on the Output value
       int steps = (int)(Output *  PWM_STEPS); // convert Output to steps 
-      unsigned long dutyCycle = steps * dutyCycleStep; // calculate the duty cycle in milliseconds
+      dutyCycle = steps * dutyCycleStep; // calculate the duty cycle in milliseconds
+    }
+    else{
+      digitalWrite(RELAYPIN, LOW);
     }
   }
 
-  if (millis() - lastPeriod > dutyCycleStep) {
+  if (millis() - lastPeriod > dutyCycle) {
     digitalWrite(RELAYPIN, LOW); // turn off the relay
   }
 }
@@ -979,4 +983,3 @@ void GetStatus() {
   server.send(200, "application/json", response);
 }
 // -------------------------------------------------------------------------------------------------
-

@@ -55,6 +55,7 @@ select{
   padding: 10px;
   margin: 5px 0;
   border: 1px solid #ccc;
+  color: #ffffff;
   background-color: #333333;
   border-radius: 4px;
 }
@@ -62,6 +63,7 @@ select{
 option{
   padding: 10px;
   margin: 5px 0;
+  color: #ffffff;
   border: 1px solid #ccc;
   border-radius: 4px;
 }
@@ -110,7 +112,7 @@ option{
 }
 
 .oven-settings input{
-  width: 50px;;
+  width: 80px;;
   margin-left: 3px;
   margin-right: 10px;
 }
