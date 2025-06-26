@@ -19,10 +19,10 @@ Below is a guide on how to choose parts and a step-by-step list of steps to recr
  - 1x Mini toaster oven
 <h3>Optional Materials</h3>
  - 1x Rocker Switch and associated Wire Terminators<br>
- - 1x SSD1306 driven 128x64 OLED screen
+ - 1x SSD1306 driven 128x64 OLED screen<br>
  - 1x 5V-12V ACDC Power Supply<br>
  - 1x Calibrated thermometer capable of handling 300°C<br>
- - 1x Multimeter
+ - 1x Multimeter<br>
  - 1x Drill<br>
 
 <h2>Considerations</h2>
