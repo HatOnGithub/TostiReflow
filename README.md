@@ -28,7 +28,7 @@ Below is a guide on how to choose parts and a step-by-step list of steps to recr
 <h2>Considerations</h2>
 
 While picking out the parts, there are some things to keep in mind:<br>
-1) Select the known resistance based on the thermistor's datasheet. I used the resistance at 100°C (5.6K Ohm).<br>
+1) Select the known resistance based on the thermistor's datasheet. I used the resistance of my thermistor at 100°C (5.6K Ohm).<br>
 2) Make sure your thermistor can handle 300°C; otherwise, you might melt the thermistor or its cable<br>
 3) Ensure the oven can stay on at maximum temperature. If the oven has a temperature controller, you will have to modify it to remove it.<br>
 4) The Switch is used to turn the whole assembly on or off. Ensure the switch can handle mains power of over 5A.<br>
