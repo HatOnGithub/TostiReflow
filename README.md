@@ -45,6 +45,7 @@ While picking out the parts, there are some things to keep in mind:<br>
 5) Use the thermometer to compare the measured temperature from the thermistor
 
 <h2>Build Guide</h2>
+WARNING: you will have to work with mains 230VAC power. Please wear personal protective equipment while handling components and insulate/isolate any potential contact points. Double-check all connections before turning anything on, as a wrong connection or short circuit may fry components and trip breakers. 
 
 1) Wire the controller according to [this](Schematic.png) schematic<br>
 2) Upload the program using PlatformIO (or ArduinoIDE) and check if every component is functional with the help of a multimeter.
